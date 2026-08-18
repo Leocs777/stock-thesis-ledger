@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>org.investorlab.tunnel</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__NGROK_BIN__</string>
+        <string>http</string>
+        <string>8000</string>
+        <string>--url</string>
+        <string>__INVESTORLAB_PUBLIC_URL__</string>
+        <string>--log</string>
+        <string>stdout</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>__INVESTORLAB_ROOT__/data/ngrok.log</string>
+    <key>StandardErrorPath</key>
+    <string>__INVESTORLAB_ROOT__/data/ngrok.error.log</string>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+</dict>
+</plist>

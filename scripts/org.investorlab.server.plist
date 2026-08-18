@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>org.investorlab.server</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__PYTHON_BIN__</string>
+        <string>__INVESTORLAB_ROOT__/app.py</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>__INVESTORLAB_ROOT__</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>SSL_CERT_FILE</key>
+        <string>/etc/ssl/cert.pem</string>
+        <key>INVESTORLAB_PUBLIC_URL</key>
+        <string>__INVESTORLAB_PUBLIC_URL__</string>
+        <key>INVESTORLAB_SECURE_COOKIE</key>
+        <string>1</string>
+        <key>INVESTORLAB_MARKET_HISTORY</key>
+        <string>compact</string>
+        <key>INVESTORLAB_INTRADAY_COLLECTION</key>
+        <string>0</string>
+        <key>INVESTORLAB_INTRADAY_SYMBOL_LIMIT</key>
+        <string>8</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ProcessType</key>
+    <string>Interactive</string>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>__INVESTORLAB_ROOT__/data/investor-lab.log</string>
+    <key>StandardErrorPath</key>
+    <string>__INVESTORLAB_ROOT__/data/investor-lab.error.log</string>
+</dict>
+</plist>

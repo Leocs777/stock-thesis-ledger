@@ -1,0 +1,52 @@
+{
+  "_demo": true,
+  "_notice": "Fabricated example for schema inspection only. Not market history, performance, or advice.",
+  "symbol": "DEMO",
+  "model_version": "decision-v4.1",
+  "trading_date": "2026-01-30",
+  "signal": "watch",
+  "signal_label": "Watch / wait",
+  "score": 68,
+  "strategy": {
+        "style": "balanced",
+        "horizon": "swing",
+        "freeze_protocol": "full-context-v1",
+        "frozen_at": "2025-12-01T00:00:00Z",
+        "technical_weight": 60,
+    "fundamental_weight": 25,
+    "portfolio_weight": 15,
+    "origin": "Transparent multi-factor rules; not machine learning."
+  },
+  "evidence": [
+    "Close remains above the 20-session average.",
+    "Latest cached filing shows positive free cash flow."
+  ],
+  "counter_evidence": [
+    "Momentum does not meet the buy-candidate threshold.",
+    "The adjusted-price window is short."
+  ],
+  "invalidation": "Refresh the thesis if price closes below the saved SMA50 reference.",
+  "price_plan": {
+    "available": true,
+    "buy_zone_low": "48.50",
+    "buy_zone_high": "50.00",
+    "risk_stop": "46.75",
+    "target_1": "56.50",
+    "target_2": "59.75",
+    "disclaimer": "Synthetic price geometry, not a forecast or executable quote."
+  },
+  "backtest": {
+    "available": true,
+    "strategy_return_percent": "4.20",
+    "max_drawdown_percent": "-3.10",
+    "out_of_sample": {
+      "available": true,
+      "method": "chronological_70_30_holdout",
+      "parameters_frozen": true,
+      "strategy_frozen_at": "2025-12-01T00:00:00Z",
+      "sessions": 15,
+      "strategy_return_percent": "0.80",
+      "relative_to_spy_percent": "-0.30"
+    }
+  }
+}
