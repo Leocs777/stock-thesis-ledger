@@ -810,7 +810,7 @@ class InvestorLabAPITest(unittest.TestCase):
     def test_market_key_is_saved_without_being_returned(self):
         self.register()
         api_key = "PersonalMarketKey2026"
-        with patch("app.subprocess.run") as security:
+        with patch("app.sys.platform", "darwin"), patch("app.subprocess.run") as security:
             security.return_value.returncode = 0
             security.return_value.stdout = ""
             status, response = self.request(
