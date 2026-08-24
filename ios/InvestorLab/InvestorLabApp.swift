@@ -18,8 +18,16 @@ struct InvestorLabApp: App {
     }
 }
 
+private enum AppTab: Hashable {
+    case lab
+    case command
+    case journal
+    case settings
+}
+
 private struct RootView: View {
     @ObservedObject var store: LabStore
+    @State private var selectedTab = AppTab.lab
 
     var body: some View {
         Group {
@@ -32,15 +40,23 @@ private struct RootView: View {
             case .signedOut:
                 AuthenticationView(store: store)
             case .signedIn:
-                TabView {
-                    DashboardView(store: store)
+                TabView(selection: $selectedTab) {
+                    DashboardView(
+                        store: store,
+                        openCommand: { selectedTab = .command },
+                        openJournal: { selectedTab = .journal }
+                    )
                         .tabItem { Label("Lab", systemImage: "rectangle.3.group.fill") }
+                        .tag(AppTab.lab)
                     CommandCenterView(store: store)
                         .tabItem { Label("Command", systemImage: "scope") }
+                        .tag(AppTab.command)
                     JournalView(store: store)
                         .tabItem { Label("Journal", systemImage: "clock.arrow.circlepath") }
+                        .tag(AppTab.journal)
                     SettingsView(store: store)
                         .tabItem { Label("Settings", systemImage: "slider.horizontal.3") }
+                        .tag(AppTab.settings)
                 }
                 .tint(.signalOrange)
             }
@@ -206,7 +222,10 @@ private enum ResearchMode: String, CaseIterable, Identifiable {
 
 private struct DashboardView: View {
     @ObservedObject var store: LabStore
+    let openCommand: () -> Void
+    let openJournal: () -> Void
     @Environment(\.locale) private var locale
+    @AppStorage("workflowSymbol") private var workflowSymbol = ""
     @State private var mode = ResearchMode.invest
     @State private var showingWatchlistForm = false
     @State private var showingTradeForm = false
@@ -342,6 +361,7 @@ private struct DashboardView: View {
                 detail: store.marketStatus?.configured == true ? "Alpha Vantage" : "API key required"
             )
         }
+        workflowGuide
         strategyLens
         dailyBriefing
         portfolioPerformance
@@ -360,6 +380,97 @@ private struct DashboardView: View {
         portfolioActions
         rebalanceCalculator
         priceAlerts
+    }
+
+    private var workflowGuide: some View {
+        LabSection(
+            title: "Guided workflow",
+            subtitle: "Complete the core loop first. Advanced research tools stay available below.",
+            badge: "4 STEPS"
+        ) {
+            workflowButton(number: "01", title: "Choose a stock", detail: "Add a ticker to the synchronized watchlist.") {
+                showingWatchlistForm = true
+            }
+            workflowButton(number: "02", title: "Refresh & score", detail: "Update evidence and generate the current decision.") {
+                let symbol = activeWorkflowSymbol
+                guard !symbol.isEmpty else {
+                    store.errorMessage = labLocalized("Choose a stock before refreshing evidence.")
+                    return
+                }
+                researchSymbol = symbol
+                workflowSymbol = symbol
+                Task {
+                    await store.refreshMarket(symbol)
+                    await store.generateDecision(symbol)
+                }
+            }
+            workflowButton(number: "03", title: "Prepare paper order", detail: "Carry the selected symbol into the Paper-only ticket.") {
+                let symbol = activeWorkflowSymbol
+                guard !symbol.isEmpty else {
+                    store.errorMessage = labLocalized("Choose a stock before preparing a paper order.")
+                    return
+                }
+                workflowSymbol = symbol
+                openCommand()
+            }
+            workflowButton(number: "04", title: "Review outcome", detail: "Close the loop in the synchronized journal.") {
+                openJournal()
+            }
+            HStack {
+                Text("Selected symbol:").foregroundStyle(.secondary)
+                Text(activeWorkflowSymbol.isEmpty ? labLocalized("None") : activeWorkflowSymbol)
+                    .fontWeight(.semibold)
+                Spacer()
+                Text("Decision:").foregroundStyle(.secondary)
+                Text(workflowDecisionText)
+                    .fontWeight(.semibold)
+            }
+            .font(.caption)
+        }
+    }
+
+    private func workflowButton(number: String, title: String, detail: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 13) {
+                Text(number)
+                    .font(.caption2.weight(.black))
+                    .foregroundStyle(Color.signalOrange)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(LocalizedStringKey(title)).font(.subheadline.weight(.semibold))
+                    Text(LocalizedStringKey(detail)).font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(Color.signalOrange)
+            }
+            .padding(13)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.labLine))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var activeWorkflowSymbol: String {
+        let candidates = [researchSymbol, workflowSymbol, store.snapshot.watchlist.first?.symbol ?? ""]
+        return candidates.first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }?
+            .trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    }
+
+    private var workflowDecisionText: String {
+        guard let decision = store.decisionBundle?.latest,
+              decision.symbol.caseInsensitiveCompare(activeWorkflowSymbol) == .orderedSame else {
+            return labLocalized("Not generated")
+        }
+        return decision.score.map { "\(labLocalized(decision.signalLabel)) · \($0)/100" }
+            ?? labLocalized(decision.signalLabel)
+    }
+
+    private func openResearch(_ symbol: String) {
+        let normalized = symbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard !normalized.isEmpty else { return }
+        researchSymbol = normalized
+        workflowSymbol = normalized
+        Task { await store.loadMarket(normalized) }
     }
 
     private var paperAccountMirror: some View {
@@ -424,8 +535,7 @@ private struct DashboardView: View {
                     }
                     Spacer()
                     Button("Open") {
-                        researchSymbol = item.symbol
-                        Task { await store.loadMarket(item.symbol) }
+                        openResearch(item.symbol)
                     }
                     .buttonStyle(.bordered)
                     Button("Add") { Task { _ = await store.addSymbol(item.symbol) } }
@@ -665,8 +775,7 @@ private struct DashboardView: View {
                             mode = .options
                         } else if let symbol = item.symbol {
                             mode = .invest
-                            researchSymbol = symbol
-                            Task { await store.loadMarket(symbol) }
+                            openResearch(symbol)
                         }
                     } label: {
                         HStack(spacing: 12) {
@@ -789,8 +898,7 @@ private struct DashboardView: View {
             } else {
                 ForEach(filteredScreenerItems) { item in
                     Button {
-                        researchSymbol = item.symbol
-                        Task { await store.loadMarket(item.symbol) }
+                        openResearch(item.symbol)
                     } label: {
                         HStack(spacing: 12) {
                             VStack(alignment: .leading, spacing: 3) {
@@ -822,8 +930,7 @@ private struct DashboardView: View {
             } else {
                 ForEach(store.snapshot.watchlistResearch) { research in
                     Button {
-                        researchSymbol = research.symbol
-                        Task { await store.loadMarket(research.symbol) }
+                        openResearch(research.symbol)
                     } label: {
                         HStack(spacing: 12) {
                             VStack(alignment: .leading, spacing: 4) {
@@ -871,7 +978,11 @@ private struct DashboardView: View {
                     .frame(minHeight: 44)
                     .background(Color.white, in: RoundedRectangle(cornerRadius: 11))
                     .overlay(RoundedRectangle(cornerRadius: 11).stroke(Color.labLine))
-                Button("Refresh") { Task { await store.refreshMarket(researchSymbol) } }
+                Button("Refresh") {
+                    let symbol = researchSymbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+                    workflowSymbol = symbol
+                    Task { await store.refreshMarket(symbol) }
+                }
                     .buttonStyle(LabButtonStyle(compact: true))
                     .disabled(researchSymbol.trimmingCharacters(in: .whitespaces).isEmpty)
             }
@@ -1317,8 +1428,7 @@ private struct DashboardView: View {
             } else {
                 ForEach(store.snapshot.decisionCenter.latest) { decision in
                     Button {
-                        researchSymbol = decision.symbol
-                        Task { await store.loadMarket(decision.symbol) }
+                        openResearch(decision.symbol)
                     } label: {
                         HStack(spacing: 12) {
                             VStack(alignment: .leading, spacing: 4) {
@@ -1344,7 +1454,9 @@ private struct DashboardView: View {
                 }
             }
             Button("Generate for \(researchSymbol.isEmpty ? "symbol" : researchSymbol.uppercased())") {
-                Task { await store.generateDecision(researchSymbol) }
+                let symbol = researchSymbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+                workflowSymbol = symbol
+                Task { await store.generateDecision(symbol) }
             }
             .buttonStyle(LabButtonStyle())
             .disabled(researchSymbol.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.isLoading)
@@ -2421,6 +2533,7 @@ private struct OptionsWorkspace: View {
 
 private struct CommandCenterView: View {
     @ObservedObject var store: LabStore
+    @AppStorage("workflowSymbol") private var workflowSymbol = ""
     @State private var paperEnabled = false
     @State private var paperMaximum = "1000"
     @State private var paperDailyStop = "300"
@@ -2447,6 +2560,7 @@ private struct CommandCenterView: View {
     @State private var comparisonSymbol = ""
     @State private var copilotSymbol = ""
     @State private var copilotQuestion = "What evidence supports and challenges this setup?"
+    @State private var showAdvancedTools = false
 
     var body: some View {
         NavigationStack {
@@ -2454,12 +2568,33 @@ private struct CommandCenterView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     commandHeader
                     paperExecution
-                    universeScanner
-                    notificationRules
-                    optionScenario
-                    researchAndPortfolio
-                    researchCopilot
-                    reportsAndQuality
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { showAdvancedTools.toggle() }
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(showAdvancedTools ? "Hide advanced tools" : "Show advanced tools")
+                                    .font(.subheadline.weight(.semibold))
+                                Text("Scanners, alerts, option scenarios, comparisons, reports, and data quality.")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: showAdvancedTools ? "chevron.up" : "chevron.down")
+                                .foregroundStyle(Color.signalOrange)
+                        }
+                        .padding(14)
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: 15))
+                        .overlay(RoundedRectangle(cornerRadius: 15).stroke(Color.labLine))
+                    }
+                    .buttonStyle(.plain)
+                    if showAdvancedTools {
+                        universeScanner
+                        notificationRules
+                        optionScenario
+                        researchAndPortfolio
+                        researchCopilot
+                        reportsAndQuality
+                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 18)
@@ -2468,7 +2603,10 @@ private struct CommandCenterView: View {
             .navigationTitle("Command")
             .navigationBarTitleDisplayMode(.inline)
             .refreshable { await store.loadCommandCenter() }
-            .onAppear { loadControl() }
+            .onAppear {
+                loadControl()
+                if orderSymbol.isEmpty { orderSymbol = workflowSymbol }
+            }
             .onChange(of: store.researchCommandCenter?.paperExecution.updatedAt) { _, _ in loadControl() }
         }
     }

@@ -188,6 +188,17 @@
     .metric-value { font: var(--weight-bold) 27px/1 var(--font-sans); font-variant-numeric: tabular-nums; letter-spacing: -.04em; }
     .metric-foot { font-size: 10px; color: var(--muted); }
 
+    .workflow-panel { background: linear-gradient(135deg, rgba(251,250,246,.98), rgba(232,93,42,.055)); }
+    .workflow-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    .workflow-step { min-height: 118px; display: grid; align-content: space-between; gap: 14px; padding: 16px; border: 1px solid var(--line); border-radius: 16px; color: var(--ink); background: rgba(255,255,255,.82); text-align: left; }
+    .workflow-step:hover { border-color: rgba(232,93,42,.42); background: white; transform: translateY(-2px); }
+    .workflow-step__number { color: var(--signal); font: var(--weight-bold) 10px/1 var(--font-sans); letter-spacing: .12em; }
+    .workflow-step strong { font-size: 13px; }
+    .workflow-step small { display: block; margin-top: 5px; color: var(--muted); font-size: 10px; line-height: 1.4; }
+    .workflow-context { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 13px; color: var(--muted); font-size: 11px; }
+    .workflow-context strong { color: var(--ink); }
+    .command-tools-toggle { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; border: 1px dashed var(--line); border-radius: 16px; background: rgba(255,255,255,.5); }
+
     .grid { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 14px; align-items: start; }
     .panel { min-width: 0; border-radius: var(--radius-lg); padding: 23px; }
     .panel.wide { grid-column: 1 / -1; }
@@ -413,6 +424,7 @@
       .hero-metrics { grid-template-columns: 1fr; }
       .hero-metric { display: flex; }
       .metric-grid, .grid, .mode-hero, .status-grid, .decision-hero, .decision-evidence, .briefing-summary, .performance-grid, .strategy-lens, .level-grid { grid-template-columns: 1fr; }
+      .workflow-steps { grid-template-columns: 1fr 1fr; }
       .strategy-lens form { grid-template-columns: 1fr 1fr auto; }
       .panel.wide { grid-column: auto; }
       .trade-form { grid-template-columns: 1fr 1fr; }
@@ -440,6 +452,9 @@
       .planner-form { grid-template-columns: 1fr; }
       .planner-form .span-2, .planner-form .span-4 { grid-column: auto; }
       .strategy-lens form { grid-template-columns: 1fr; }
+      .workflow-steps { grid-template-columns: 1fr; }
+      .workflow-step { min-height: 96px; }
+      .command-tools-toggle { align-items: flex-start; flex-direction: column; }
       .plan-item { grid-template-columns: 1fr auto; }
       .plan-item > div:nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
       .exposure-row { grid-template-columns: 78px minmax(0,1fr) 70px; }
@@ -540,6 +555,17 @@
           </section>
 
           <section class="grid">
+            <article class="panel wide workflow-panel" id="workflowPanel">
+              <div class="panel-head"><div><h2>Guided workflow</h2><p class="panel-subtitle">Complete the core loop first. Advanced research tools stay available without crowding the next action.</p></div><span class="tag warning lab-badge" data-tone="warning">4 STEPS</span></div>
+              <div class="workflow-steps">
+                <button class="workflow-step" type="button" data-workflow-step="select"><span class="workflow-step__number">01</span><span><strong>Choose a stock</strong><small>Search by company name or ticker.</small></span></button>
+                <button class="workflow-step" type="button" data-workflow-step="research"><span class="workflow-step__number">02</span><span><strong>Refresh &amp; score</strong><small>Update evidence and generate the current decision.</small></span></button>
+                <button class="workflow-step" type="button" data-workflow-step="paper"><span class="workflow-step__number">03</span><span><strong>Prepare paper order</strong><small>Carry the selected symbol into the Paper-only ticket.</small></span></button>
+                <button class="workflow-step" type="button" data-workflow-step="review"><span class="workflow-step__number">04</span><span><strong>Review outcome</strong><small>Close the loop in the synchronized journal.</small></span></button>
+              </div>
+              <div class="workflow-context"><span>Selected symbol: <strong id="workflowSymbol">None</strong></span><span>Decision: <strong id="workflowDecisionStatus">Not generated</strong></span></div>
+            </article>
+
             <article class="panel wide">
               <div class="panel-head"><div><h2>Trading strategy</h2><p class="panel-subtitle">Choose the research lens saved with new decisions without leaving the Lab.</p></div><span class="tag warning lab-badge" data-tone="warning">Profile</span></div>
               <div class="strategy-lens">
@@ -909,7 +935,7 @@
               <div class="empty" id="tradeEmpty">Your paper trades will appear here.</div>
             </div>
           </article>
-          <article class="panel" style="margin-top:14px">
+          <article class="panel" id="planReviewPanel" style="margin-top:14px">
             <div class="panel-head"><div><h2>Review dashboard</h2><p class="panel-subtitle">Statistics use only the outcomes and discipline scores you record.</p></div><span class="tag lab-badge" data-tone="success">Self reported</span></div>
             <div class="status-grid">
               <div class="status-box"><span class="micro-label">Resolved reviews</span><strong id="reviewResolved">0</strong><p id="reviewRecord">No journal entries</p></div>
@@ -992,7 +1018,12 @@
               <div class="plan-history" id="paperOrderHistory"><span class="empty">No Investor Lab paper orders.</span></div>
             </article>
 
-            <article class="panel wide">
+            <div class="command-tools-toggle">
+              <div><strong>Advanced tools</strong><p class="panel-subtitle">Scanners, alerts, option scenarios, comparisons, reports, and data quality.</p></div>
+              <button class="account-chip" id="commandAdvancedToggle" type="button" aria-expanded="false">Show advanced tools</button>
+            </div>
+
+            <article class="panel wide" data-command-advanced hidden>
               <div class="panel-head"><div><h2>Cached universe scanner</h2><p class="panel-subtitle">Screen up to 250 cached symbols without making a paid scan request. Symbols without a decision remain data-required.</p></div><span class="tag lab-badge" data-tone="positive">COST CONTROLLED</span></div>
               <form class="planner-form" id="universeScannerForm">
                 <label><span>Preset name</span><input id="scannerPresetName" maxlength="60" value="My cached screen" required></label>
@@ -1009,7 +1040,7 @@
               <p class="scenario-line" id="universeScannerScope"></p>
             </article>
 
-            <article class="panel wide">
+            <article class="panel wide" data-command-advanced hidden>
               <div class="panel-head"><div><h2>Unified notification rules</h2><p class="panel-subtitle">Evaluate decision, filing, earnings, option-expiration, Day Trade, and data-staleness rules after sync.</p></div><span class="tag lab-badge" data-tone="positive">LOCAL DELIVERY</span></div>
               <form class="planner-form" id="notificationRuleForm">
                 <label><span>Rule type</span><select id="notificationRuleKind"><option value="decision">Decision</option><option value="filing">SEC filing</option><option value="earnings">Earnings</option><option value="option_expiration">Option expiration</option><option value="day_trade">Day Trade</option><option value="data_stale">Data stale</option></select></label>
@@ -1022,7 +1053,7 @@
               <p class="scenario-line" id="notificationRuleScope"></p>
             </article>
 
-            <article class="panel wide">
+            <article class="panel wide" data-command-advanced hidden>
               <div class="panel-head"><div><h2>Flexible option scenario</h2><p class="panel-subtitle">Model one to six legs across expiration payoff, IV shift, time decay, delta, theta, and assignment attention.</p></div><span class="tag lab-badge" data-tone="warning">SCENARIO</span></div>
               <form class="planner-form" id="optionScenarioForm">
                 <label><span>Spot price</span><input id="optionScenarioSpot" type="number" min="0.000001" step="0.01" value="200" required></label>
@@ -1036,19 +1067,19 @@
               <p class="scenario-line" id="optionScenarioScope"></p>
             </article>
 
-            <article class="panel">
+            <article class="panel" data-command-advanced hidden>
               <div class="panel-head"><div><h2>Strategy version comparison</h2><p class="panel-subtitle">Compare immutable strategy versions on the same cached sample.</p></div><span class="tag lab-badge">WALK FORWARD</span></div>
               <div class="button-row"><input id="strategyCompareSymbol" maxlength="32" placeholder="AAPL"><button class="account-chip" id="strategyCompareButton" type="button">Compare versions</button></div>
               <div class="compact-list" id="strategyCompareList"></div>
             </article>
 
-            <article class="panel">
+            <article class="panel" data-command-advanced hidden>
               <div class="panel-head"><div><h2>Portfolio intelligence</h2><p class="panel-subtitle">Exposure, cash estimate, benchmark context, stress, and tax-lot review warnings.</p></div><span class="tag lab-badge">DESCRIPTIVE</span></div>
               <div class="status-grid" id="portfolioIntelligenceMetrics"></div>
               <div class="compact-list" id="portfolioIntelligenceList"></div>
             </article>
 
-            <article class="panel wide">
+            <article class="panel wide" data-command-advanced hidden>
               <div class="panel-head"><div><h2>Evidence-grounded research copilot</h2><p class="panel-subtitle">Compose a thesis, counter-thesis, checklist, and citations from local deterministic results without an external LLM charge.</p></div><span class="tag lab-badge" data-tone="positive">LOCAL</span></div>
               <form class="planner-form" id="researchCopilotForm">
                 <label><span>Symbol</span><input id="researchCopilotSymbol" maxlength="32" placeholder="AAPL" required></label>
@@ -1058,13 +1089,13 @@
               <div class="compact-list" id="researchCopilotResult"></div>
             </article>
 
-            <article class="panel">
+            <article class="panel" data-command-advanced hidden>
               <div class="panel-head"><div><h2>Automatic reports</h2><p class="panel-subtitle">Generate an append-only daily or weekly research record.</p></div><span class="tag lab-badge">SYNCED</span></div>
               <div class="button-row"><button class="primary-button lab-button" id="dailyReportButton" type="button">Generate daily report</button><button class="account-chip" id="weeklyReportButton" type="button">Generate weekly report</button></div>
               <div class="compact-list" id="researchReportList"></div>
             </article>
 
-            <article class="panel">
+            <article class="panel" data-command-advanced hidden>
               <div class="panel-head"><div><h2>Data quality center</h2><p class="panel-subtitle">Coverage, stale symbols, collection failures, and provider policy in one audit.</p></div><span class="tag lab-badge" id="commandDataQualityBadge">CHECKING</span></div>
               <div class="status-grid" id="commandDataQualityMetrics"></div>
               <div class="compact-list" id="commandDataQualityList"></div>
@@ -2272,7 +2303,172 @@
       "2× speed": "2 倍速",
       "4× speed": "4 倍速",
       "Play replay": "播放回放",
-      "Pause replay": "暂停回放"
+      "Pause replay": "暂停回放",
+      "Guided workflow": "引导流程",
+      "Complete the core loop first. Advanced research tools stay available without crowding the next action.": "先完成核心闭环；高级研究工具仍然可用，但不会遮住下一步操作。",
+      "4 STEPS": "4 个步骤",
+      "Choose a stock": "选择股票",
+      "Search by company name or ticker.": "按公司名称或股票代码搜索。",
+      "Refresh & score": "刷新并评分",
+      "Update evidence and generate the current decision.": "更新证据并生成当前决策。",
+      "Prepare paper order": "准备模拟订单",
+      "Carry the selected symbol into the Paper-only ticket.": "把所选股票带入仅限模拟交易的订单。",
+      "Review outcome": "复盘结果",
+      "Close the loop in the synchronized journal.": "在同步日志中完成闭环。",
+      "Selected symbol:": "当前股票：",
+      "None": "未选择",
+      "Decision:": "决策：",
+      "Not generated": "尚未生成",
+      "Advanced tools": "高级工具",
+      "Scanners, alerts, option scenarios, comparisons, reports, and data quality.": "扫描器、提醒、期权情景、策略比较、报告与数据质量。",
+      "Show advanced tools": "显示高级工具",
+      "Hide advanced tools": "收起高级工具",
+      "Choose a stock before refreshing evidence.": "请先选择股票，再刷新证据。",
+      "Choose a stock before preparing a paper order.": "请先选择股票，再准备模拟订单。",
+      "A followed plan must record an open or resolved outcome.": "已执行的计划必须记录进行中或已解决的结果。",
+      "A long worksheet requires stop < entry < target.": "做多计划必须满足：止损价 < 入场价 < 目标价。",
+      "A short worksheet requires target < entry < stop.": "做空计划必须满足：目标价 < 入场价 < 止损价。",
+      "Activate must be true or false.": "Activate 必须为 true 或 false。",
+      "Alert direction must be above or below.": "提醒方向必须为 above 或 below。",
+      "Alpaca API key ID must be 8-128 safe characters.": "Alpaca API Key ID 必须为 8–128 个安全字符。",
+      "Alpaca secret key must be 16-256 safe characters.": "Alpaca Secret Key 必须为 16–256 个安全字符。",
+      "Alpha Vantage API key must be 8-128 letters or numbers.": "Alpha Vantage API 密钥必须为 8–128 个字母或数字。",
+      "An option scenario requires 1-6 legs.": "期权情景必须包含 1–6 个组合腿。",
+      "Asset type must be equity or option.": "资产类型必须为 equity 或 option。",
+      "Automatic refresh must be true or false.": "自动刷新必须为 true 或 false。",
+      "Backup does not contain the signed-in account.": "备份中不包含当前登录账户。",
+      "Bear put net debit must be positive and lower than the strike width.": "熊市看跌价差的净支出必须为正且小于行权价宽度。",
+      "Bear put short strike must be below the long strike.": "熊市看跌价差的卖出行权价必须低于买入行权价。",
+      "Bull call net debit must be positive and lower than the strike width.": "牛市看涨价差的净支出必须为正且小于行权价宽度。",
+      "Bull call short strike must be above the long strike.": "牛市看涨价差的卖出行权价必须高于买入行权价。",
+      "CSV can contain at most 500 positions.": "CSV 最多可包含 500 个持仓。",
+      "CSV headers must include average_cost (or price).": "CSV 表头必须包含 average_cost（或 price）。",
+      "CSV headers must include symbol and quantity.": "CSV 表头必须包含 symbol 和 quantity。",
+      "CSV must include a header row.": "CSV 必须包含表头行。",
+      "CSV must include at least one position.": "CSV 必须至少包含一个持仓。",
+      "Chart screenshot contains invalid base64 data.": "图表截图包含无效的 base64 数据。",
+      "Chart screenshot must be a PNG or JPEG data URL.": "图表截图必须是 PNG 或 JPEG data URL。",
+      "Chart screenshot must be between 1 byte and 750 KB.": "图表截图大小必须在 1 字节至 750 KB 之间。",
+      "Check the Paper-only acknowledgement before enabling order routing.": "启用订单路由前，请勾选仅限模拟交易确认框。",
+      "Check the order acknowledgement before submitting this simulated order.": "提交模拟订单前，请勾选订单确认框。",
+      "Choose a non-empty CSV file.": "请选择非空的 CSV 文件。",
+      "Client must be web or ios.": "客户端必须为 web 或 ios。",
+      "Client order ID must be 8-64 letters, numbers, underscores, or hyphens.": "客户端订单 ID 必须为 8–64 个字母、数字、下划线或连字符。",
+      "Copilot question must be 1-500 characters.": "研究助手问题必须为 1–500 个字符。",
+      "Data source must be alpha_vantage, alpaca_paper, or sec_edgar.": "数据源必须为 alpha_vantage、alpaca_paper 或 sec_edgar。",
+      "Decision must be followed, skipped, invalidated, or expired.": "决策必须为 followed、skipped、invalidated 或 expired。",
+      "Device ID must be 8-128 safe characters.": "设备 ID 必须为 8–128 个安全字符。",
+      "Device name must be 1-80 characters.": "设备名称必须为 1–80 个字符。",
+      "Direction must be long or short.": "方向必须为 long 或 short。",
+      "Discipline score must be a whole number from 1 to 5.": "纪律评分必须为 1 至 5 的整数。",
+      "Display name must be 1-80 characters.": "显示名称必须为 1–80 个字符。",
+      "Each rebalance target must be an object.": "每个再平衡目标都必须是对象。",
+      "Enter a valid email address.": "请输入有效的电子邮箱地址。",
+      "Execution deviation note must be 1000 characters or fewer.": "执行偏差说明不得超过 1000 个字符。",
+      "Expiration cannot be in the past.": "到期日不能早于今天。",
+      "Expiration must be a valid YYYY-MM-DD date.": "到期日必须是有效的 YYYY-MM-DD 日期。",
+      "Fee and slippage must be a whole number of basis points.": "费用与滑点必须是整数基点。",
+      "Fee and slippage must be between 0 and 500 basis points per side.": "每侧费用与滑点必须在 0 至 500 个基点之间。",
+      "Filename must be 1-255 characters.": "文件名必须为 1–255 个字符。",
+      "Halt status must be clear, halted, or unknown.": "停牌状态必须为 clear、halted 或 unknown。",
+      "Hypothesis must be 1-500 characters.": "假设必须为 1–500 个字符。",
+      "Invalid Content-Length.": "Content-Length 无效。",
+      "Invalid alert ID.": "提醒 ID 无效。",
+      "Invalid device ID or revision.": "设备 ID 或修订号无效。",
+      "Invalid device ID.": "设备 ID 无效。",
+      "Iron condor net credit must be positive and lower than its widest wing.": "铁鹰式净收入必须为正且小于最宽翼幅。",
+      "Iron condor strikes must be long put < short put < short call < long call.": "铁鹰式行权价必须满足：买入看跌 < 卖出看跌 < 卖出看涨 < 买入看涨。",
+      "Journal body must be 1-4000 characters.": "日志正文必须为 1–4000 个字符。",
+      "Journal kind must be note, review, or lesson.": "日志类型必须为 note、review 或 lesson。",
+      "Journal limit must be an integer.": "日志数量限制必须为整数。",
+      "Journal title must be 1-120 characters.": "日志标题必须为 1–120 个字符。",
+      "Long put premium must be lower than its strike.": "买入看跌期权的权利金必须低于行权价。",
+      "Maximum paper order notional cannot exceed $1,000,000.": "模拟订单最大名义金额不能超过 $1,000,000。",
+      "Notification decision signal is not supported.": "不支持该提醒决策信号。",
+      "Notification rule config must be an object.": "提醒规则配置必须是对象。",
+      "Only a followed plan can record a trading outcome.": "只有已执行的计划才能记录交易结果。",
+      "Only a followed plan can record actual entry or exit prices.": "只有已执行的计划才能记录实际入场价或离场价。",
+      "Only review entries can record a trading outcome.": "只有复盘日志才能记录交易结果。",
+      "Options risk preference must be true or false.": "期权风险偏好必须为 true 或 false。",
+      "Outcome must be open, win, loss, scratch, or na.": "结果必须为 open、win、loss、scratch 或 na。",
+      "Paper order limit must be an integer.": "模拟订单数量限制必须为整数。",
+      "Paper order side must be buy or sell.": "模拟订单方向必须为 buy 或 sell。",
+      "Paper order type must be market, limit, stop, or stop_limit.": "模拟订单类型必须为 market、limit、stop 或 stop_limit。",
+      "Password must be 12-128 characters.": "密码必须为 12–128 个字符。",
+      "Password must include an uppercase letter and a number.": "密码必须包含一个大写字母和一个数字。",
+      "Plan kind must be day_trade or options.": "计划类型必须为 day_trade 或 options。",
+      "Plan limit must be an integer.": "计划数量限制必须为整数。",
+      "Plan review note must be 1-2000 characters.": "计划复盘说明必须为 1–2000 个字符。",
+      "Platform must be web or ios.": "平台必须为 web 或 ios。",
+      "Provide a replacement quantity or limit price.": "请提供替换后的数量或限价。",
+      "Quantity must be a whole number.": "数量必须为整数。",
+      "Quantity must be between 1 and 1000 contracts.": "合约数量必须在 1 至 1000 之间。",
+      "Rebalance targets must be a non-empty list.": "再平衡目标必须是非空列表。",
+      "Record the actual entry before the actual exit.": "请先记录实际入场价，再记录实际离场价。",
+      "Refresh interval must be a whole number of hours.": "刷新间隔必须为整数小时。",
+      "Refresh interval must be between 12 and 168 hours.": "刷新间隔必须在 12 至 168 小时之间。",
+      "Replay date must be YYYY-MM-DD.": "回放日期必须为 YYYY-MM-DD。",
+      "Report limit must be an integer.": "报告数量限制必须为整数。",
+      "Report period must be daily or weekly.": "报告周期必须为 daily 或 weekly。",
+      "Request body must be a JSON object.": "请求正文必须是 JSON 对象。",
+      "Request body must be between 1 byte and 1 MB.": "请求正文大小必须在 1 字节至 1 MB 之间。",
+      "Request body must be valid JSON.": "请求正文必须是有效 JSON。",
+      "Revision is newer than the server state.": "修订号比服务器状态更新。",
+      "Revision must be an integer.": "修订号必须为整数。",
+      "Scanner limit must be an integer.": "扫描器数量限制必须为整数。",
+      "Scanner preset name must be 1-60 characters.": "扫描器预设名称必须为 1–60 个字符。",
+      "Scanner preset symbols must be a list of at most 250 tickers.": "扫描器预设标的必须是最多包含 250 个代码的列表。",
+      "Scanner signals must be a list of supported decision states.": "扫描器信号必须是受支持决策状态的列表。",
+      "Scanner symbols must be a list of at most 250 tickers.": "扫描器标的必须是最多包含 250 个代码的列表。",
+      "Search query must be 1-80 characters.": "搜索内容必须为 1–80 个字符。",
+      "Select a generated Investor Lab backup.": "请选择由 Investor Lab 生成的备份。",
+      "Select a supported notification rule type.": "请选择受支持的提醒规则类型。",
+      "Setup key is not supported.": "不支持该形态键值。",
+      "Setup tag must be 1-40 lowercase letters, numbers, spaces, underscores, or hyphens.": "形态标签必须为 1–40 个小写字母、数字、空格、下划线或连字符。",
+      "Side must be buy or sell.": "方向必须为 buy 或 sell。",
+      "Strategy must be a supported single-leg, vertical, straddle, or iron-condor structure.": "策略必须是受支持的单腿、垂直价差、跨式或铁鹰式结构。",
+      "Strategy style is invalid.": "策略风格无效。",
+      "Strategy template name must be 1-60 characters.": "策略模板名称必须为 1–60 个字符。",
+      "Strategy weights must add up to exactly 100%.": "策略权重总和必须恰好为 100%。",
+      "Stream limit and max_events must be integers.": "数据流 limit 与 max_events 必须为整数。",
+      "Symbol must be 1-32 letters, numbers, dots, or hyphens.": "股票代码必须为 1–32 个字母、数字、句点或连字符。",
+      "Sync cursor and limit must be integers.": "同步 cursor 与 limit 必须为整数。",
+      "Sync cursor must be zero or greater.": "同步 cursor 必须大于或等于零。",
+      "Target percentages cannot exceed 100%.": "目标百分比不能超过 100%。",
+      "The put strike must be at or below the call strike for a long volatility structure.": "买入波动率结构中，看跌行权价必须低于或等于看涨行权价。",
+      "Time horizon is invalid.": "持有周期无效。",
+      "Time in force must be day or gtc.": "订单有效期必须为 day 或 gtc。",
+      "Validation window must be an integer.": "验证窗口必须为整数。",
+      "delta_min cannot exceed delta_max.": "delta_min 不能大于 delta_max。",
+      "right must be all, call, or put.": "right 必须为 all、call 或 put。",
+      "Alpaca Paper account synchronized read-only.": "Alpaca 模拟账户已以只读方式同步。",
+      "Alpaca Paper account synchronized.": "Alpaca 模拟账户已同步。",
+      "Alpaca Paper order submitted.": "Alpaca 模拟订单已提交。",
+      "Alpaca credentials saved to Mac Keychain.": "Alpaca 凭据已保存到 Mac 钥匙串。",
+      "Cached screen saved and completed.": "缓存筛选器已保存并完成运行。",
+      "Candidate quote is no longer available.": "候选合约报价已不可用。",
+      "Custom strategy saved and activated.": "自定义策略已保存并启用。",
+      "Data health check completed and recorded.": "数据健康检查已完成并记录。",
+      "Design preview only": "仅设计预览",
+      "Enter a Day Trade symbol first.": "请先输入日内交易股票代码。",
+      "Live monitor stopped.": "实时监控已停止。",
+      "Live setup copied into the paper worksheet.": "实时形态已带入模拟计划表。",
+      "Live watchlist monitor started.": "自选股实时监控已启动。",
+      "No external requests": "不发送外部请求",
+      "No private data": "不含私人数据",
+      "No personal symbols loaded in design preview.": "设计预览中未加载个人自选股。",
+      "Notification rule added.": "提醒规则已添加。",
+      "Option candidate copied into the manual worksheet.": "期权候选已带入手动计划表。",
+      "Paper order canceled.": "模拟订单已撤销。",
+      "Paper order replacement submitted.": "模拟订单修改已提交。",
+      "Preview": "预览",
+      "Restart the local Investor Lab service to activate the new validation API.": "请重新启动本地 Investor Lab 服务以启用新的验证 API。",
+      "Sanitized / preview": "脱敏 / 预览",
+      "Select a verified backup first.": "请先选择已验证的备份。",
+      "Stop live monitor": "停止实时监控",
+      "This browser does not support the live monitor stream.": "此浏览器不支持实时监控数据流。",
+      "This setup does not have complete planning levels yet.": "此形态尚无完整的计划价位。",
+      "Verified database backup created.": "已创建并验证数据库备份。"
     };
     function t(value) {
       const source = String(value ?? "");
@@ -2280,6 +2476,8 @@
       if (zhCN[source]) return zhCN[source];
       const rules = [
         [/^Updated (.+)\.$/, (_, value) => `更新于 ${value}。`],
+        [/^(.+) research loaded\.$/, (_, symbol) => `${symbol} 研究资料已加载。`],
+        [/^(.+) evidence refreshed and decision generated\.$/, (_, symbol) => `${symbol} 证据已刷新，决策已生成。`],
         [/^Last attempted (.+)\.$/, (_, value) => `上次尝试：${value}。`],
         [/^(.+) estimated cash$/, (_, value) => `预估现金 ${value}`],
         [/^(.+) cost basis$/, (_, value) => `成本基础 ${value}`],
@@ -2485,6 +2683,41 @@
       if (name === "command" && currentUser) loadCommandCenter().catch(error => notify(error.message));
     }
 
+    function currentWorkflowSymbol() {
+      return ($("marketSymbol").value || storageGet("investorlab_workflow_symbol", "")).trim().toUpperCase();
+    }
+
+    function updateWorkflowContext(symbol, signal = null, score = null) {
+      const normalized = String(symbol || "").trim().toUpperCase();
+      if (normalized) storageSet("investorlab_workflow_symbol", normalized);
+      $("workflowSymbol").textContent = normalized || t("None");
+      $("workflowDecisionStatus").textContent = signal
+        ? `${t(signal)}${score === null || score === undefined ? "" : ` · ${score}/100`}`
+        : t("Not generated");
+    }
+
+    async function runWorkflowResearch(button) {
+      const symbol = currentWorkflowSymbol();
+      if (!symbol) {
+        notify("Choose a stock before refreshing evidence.");
+        $("companySearchQuery").focus();
+        $("companySearchForm").scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+      button.disabled = true;
+      $("marketSymbol").value = symbol;
+      updateWorkflowContext(symbol);
+      try {
+        const market = await request("/api/market/refresh", { method: "POST", body: JSON.stringify({ symbol }) });
+        renderMarket(market);
+        await request("/api/decisions", { method: "POST", body: JSON.stringify({ symbol }) });
+        await refresh();
+        $("decisionResult").scrollIntoView({ behavior: "smooth", block: "start" });
+        notify(`${symbol} evidence refreshed and decision generated.`);
+      } catch (error) { notify(error.message); }
+      finally { button.disabled = false; }
+    }
+
     function renderWatchlistResearch(items) {
       $("watchResearchBoard").innerHTML = items.length ? items.map(item => {
         if (!item.available) return `<button class="research-card" type="button" data-research="${safe(item.symbol)}"><span><strong>${safe(item.symbol)}</strong><small>No cached evidence</small></span><span></span><span class="research-card__date">Refresh below</span></button>`;
@@ -2502,8 +2735,10 @@
       if (!decision) {
         $("decisionEmpty").textContent = "Refresh at least 60 daily bars, then generate a decision.";
         translateUI($("decisionEmpty"));
+        updateWorkflowContext(currentWorkflowSymbol());
         return;
       }
+      updateWorkflowContext(decision.symbol, decision.signal_label, decision.score);
       $("decisionModelBadge").textContent = decision.model_version;
       $("decisionScore").textContent = decision.score === null ? "DATA GATE" : `${decision.score} / 100`;
       $("decisionSignal").textContent = decision.signal_label;
@@ -3701,10 +3936,12 @@
     }
 
     async function openMarketResearch(symbol) {
-      $("marketSymbol").value = symbol;
-      await Promise.all([loadMarket(symbol), loadDecision(symbol), loadFundamentals(symbol)]);
+      const normalized = String(symbol || "").trim().toUpperCase();
+      $("marketSymbol").value = normalized;
+      updateWorkflowContext(normalized);
+      await Promise.all([loadMarket(normalized), loadDecision(normalized), loadFundamentals(normalized)]);
       $("marketForm").scrollIntoView({ behavior: "smooth", block: "center" });
-      notify(`${symbol} research loaded.`);
+      notify(`${normalized} research loaded.`);
     }
 
     async function refresh() {
@@ -3795,6 +4032,41 @@
       try {
         renderCompanySearch(await request(`/api/search?q=${encodeURIComponent(query)}`));
       } catch (error) { notify(error.message); }
+    });
+
+    $("workflowPanel").addEventListener("click", async event => {
+      const button = event.target.closest("[data-workflow-step]");
+      if (!button) return;
+      const step = button.dataset.workflowStep;
+      if (step === "select") {
+        $("companySearchForm").scrollIntoView({ behavior: "smooth", block: "center" });
+        setTimeout(() => $("companySearchQuery").focus(), 250);
+        return;
+      }
+      if (step === "research") {
+        await runWorkflowResearch(button);
+        return;
+      }
+      const symbol = currentWorkflowSymbol();
+      if (step === "paper") {
+        if (!symbol) { notify("Choose a stock before preparing a paper order."); return; }
+        $("paperOrderSymbol").value = symbol;
+        setView("command");
+        setTimeout(() => $("paperOrderForm").scrollIntoView({ behavior: "smooth", block: "center" }), 250);
+        return;
+      }
+      if (step === "review") {
+        if (symbol) $("journalSymbol").value = symbol;
+        setView("journal");
+        setTimeout(() => $("planReviewPanel").scrollIntoView({ behavior: "smooth", block: "start" }), 250);
+      }
+    });
+
+    $("commandAdvancedToggle").addEventListener("click", event => {
+      const expanded = event.currentTarget.getAttribute("aria-expanded") !== "true";
+      event.currentTarget.setAttribute("aria-expanded", String(expanded));
+      event.currentTarget.textContent = t(expanded ? "Hide advanced tools" : "Show advanced tools");
+      document.querySelectorAll("[data-command-advanced]").forEach(panel => { panel.hidden = !expanded; });
     });
 
     $("companySearchResults").addEventListener("click", async event => {
@@ -4685,6 +4957,7 @@
     setView(initialView);
     setAuthMode("register");
     translateUI();
+    updateWorkflowContext(storageGet("investorlab_workflow_symbol", ""));
     if (designPreview) {
       $("authGate").hidden = true;
       $("appShell").removeAttribute("inert");
@@ -4697,6 +4970,7 @@
       $("asOf").textContent = "No private data";
       $("watchList").innerHTML = `<span class="empty">No personal symbols loaded in design preview.</span>`;
       $("watchResearchBoard").innerHTML = "";
+      translateUI();
     } else {
       bootstrapAuth();
     }

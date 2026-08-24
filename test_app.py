@@ -147,6 +147,7 @@ class InvestorLabAPITest(unittest.TestCase):
     def test_chinese_catalog_covers_static_and_dynamic_product_copy(self):
         root = Path(__file__).parent
         web = (root / "web" / "index.html").read_text()
+        app_source = (root / "app.py").read_text()
         catalog_source = web[web.index("const zhCN = {") : web.index("function t(value)")]
         web_keys = {
             json.loads(f'"{match}"')
@@ -181,8 +182,29 @@ class InvestorLabAPITest(unittest.TestCase):
             self.assertIn(dynamic_key, web_keys)
         self.assertIn('window.confirm(t("Permanently delete this account', web)
 
+        backend_errors = {
+            json.loads(f'"{match}"')
+            for match in re.findall(
+                r'(?:InputError|AuthError|ConflictError)\(\s*"((?:[^"\\]|\\.)+)"',
+                app_source,
+            )
+        }
+        self.assertEqual(backend_errors - web_keys, set())
+
+        runtime_literals = {
+            json.loads(f'"{match}"')
+            for pattern in (
+                r'notify\(\s*"((?:[^"\\]|\\.)+)"',
+                r'\.textContent\s*=\s*"((?:[^"\\]|\\.)+)"',
+            )
+            for match in re.findall(pattern, web)
+            if re.search(r"[A-Za-z]{2}", match)
+        }
+        self.assertEqual(runtime_literals - web_keys, set())
+
         strings = (root / "ios" / "InvestorLab" / "zh-Hans.lproj" / "Localizable.strings").read_text()
         ios_keys = set(re.findall(r'^"((?:[^"\\]|\\.)+)"\s*=', strings, re.MULTILINE))
+        self.assertEqual(backend_errors - ios_keys, set())
         for dynamic_key in (
             "Equity",
             "Option",
@@ -205,6 +227,11 @@ class InvestorLabAPITest(unittest.TestCase):
         self.assertIn("components.host != nil", ios_app)
         self.assertIn("refreshFilingNotificationsIfAuthorized", ios_app)
         self.assertIn("notifySecFilingChanges(data.sec_events)", web)
+        self.assertIn('id="workflowPanel"', web)
+        self.assertIn('id="commandAdvancedToggle"', web)
+        self.assertIn('data-command-advanced hidden', web)
+        self.assertIn('@AppStorage("workflowSymbol")', ios_app)
+        self.assertIn("if showAdvancedTools", ios_app)
 
     def test_protected_data_requires_authentication(self):
         with self.assertRaises(HTTPError) as error:

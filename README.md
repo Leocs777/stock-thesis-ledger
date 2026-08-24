@@ -9,7 +9,7 @@ Paper-only execution boundary.
 
 [![CI](https://github.com/Leocs777/stock-thesis-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/Leocs777/stock-thesis-ledger/actions/workflows/ci.yml)
 [![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-22313f.svg)](LICENSE)
-[![Release: v0.1.3](https://img.shields.io/badge/release-v0.1.3-1d4ed8.svg)](#v013-usability)
+[![Release: v0.1.4](https://img.shields.io/badge/release-v0.1.4-1d4ed8.svg)](#v014-guided-workflow)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-0f766e.svg)](#quick-start)
 [![Paper only](https://img.shields.io/badge/brokerage-Paper_only-e85d2a.svg)](#safety-boundary)
 
@@ -39,6 +39,16 @@ evidence; the journal, worksheets, sync, and paper ledger remain local.
 [Read the strategy methodology](docs/strategy-methodology.md) ·
 [Run a Paper validation campaign](docs/paper-validation-protocol.md) ·
 [Understand the safety model](#safety-boundary)
+
+## v0.1.4 guided workflow
+
+Version 0.1.4 adds the same four-step core loop to Web and iOS: choose a stock,
+refresh evidence and score it, prepare a Paper-only order, and review the
+outcome. The chosen ticker carries into the Paper ticket. Advanced scanners,
+alerts, scenarios, comparisons, reports, and data-quality tools are still
+available, but stay collapsed until needed. Chinese localization now covers
+static interface copy, runtime statuses, and every literal server validation
+error through an automated Web/iOS coverage check.
 
 ## v0.1.3 usability
 
