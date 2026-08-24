@@ -103,7 +103,7 @@ network access with local fakes.
 ## Safety invariants
 
 1. There is no live brokerage base URL or real-money order path.
-2. Paper mutations require explicit enablement, typed confirmations, idempotent
+2. Paper mutations require explicit enablement, acknowledgements, idempotent
    client IDs, and local notional/loss checks.
 3. Missing, stale, or invalid evidence must remain visible and non-actionable.
 4. Browser and iOS session material stays in its platform-appropriate secure

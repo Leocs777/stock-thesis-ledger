@@ -42,7 +42,7 @@ profiles, archives, or exported IPAs.
 4. Preserve append-only histories unless a documented migration requires a
    different model.
 5. Keep all brokerage mutation code fixed to Alpaca Paper and behind the
-   existing confirmation and risk checks.
+   existing acknowledgement and risk checks.
 6. Add or update tests for behavior changes.
 7. Update public documentation when settings, routes, storage, or risk
    boundaries change.

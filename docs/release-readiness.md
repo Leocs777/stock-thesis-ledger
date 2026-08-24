@@ -2,7 +2,7 @@
 
 Stock Thesis Ledger is a paper-only build. The compatible internal
 `Investor Lab` runtime can submit, replace, and
-cancel Alpaca Paper orders only after typed confirmations and local risk checks.
+cancel Alpaca Paper orders only after explicit acknowledgements and local risk checks.
 The host is fixed to `paper-api.alpaca.markets`; live-account brokerage routing
 is not implemented.
 

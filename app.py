@@ -56,7 +56,7 @@ OCC_OPTION_RE = re.compile(r"^([A-Z]{1,6})(\d{6})([CP])(\d{8})$")
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
 SCHEMA_VERSION = 16
-APP_VERSION = "0.1.2"
+APP_VERSION = "0.1.3"
 DECISION_MODEL_VERSION = "decision-v4.1"
 STRATEGY_FREEZE_PROTOCOL = "full-context-v1"
 SESSION_DAYS = 30
@@ -3233,7 +3233,7 @@ def system_health(path: Path, user_id: str) -> dict[str, Any]:
         {"key": "scheduler", "status": "pass" if SCHEDULER_STATE["running"] else "attention", "detail": f"Scheduler last cycle: {SCHEDULER_STATE['last_cycle_at']}." if SCHEDULER_STATE["last_cycle_at"] else "Scheduler has not completed a cycle in this process."},
         {"key": "public_url", "status": "pass" if os.environ.get("INVESTORLAB_PUBLIC_URL", "").strip() else "attention", "detail": "Stable HTTPS URL configured." if os.environ.get("INVESTORLAB_PUBLIC_URL", "").strip() else "No public URL configured."},
         {"key": "paper_account", "status": "pass" if paper_snapshot else "attention", "detail": f"Latest read-only paper snapshot: {paper_snapshot['fetched_at']}." if paper_snapshot else "Paper account has not been synchronized."},
-        {"key": "paper_order_routing", "status": "pass", "detail": "Alpaca Paper routing is enabled behind typed confirmation and local limits." if paper_control["enabled"] else "Alpaca Paper routing is safely locked."},
+        {"key": "paper_order_routing", "status": "pass", "detail": "Alpaca Paper routing is enabled behind explicit acknowledgement and local limits." if paper_control["enabled"] else "Alpaca Paper routing is safely locked."},
     ]
     return {
         "app_version": APP_VERSION,
@@ -3272,7 +3272,7 @@ def system_health(path: Path, user_id: str) -> dict[str, Any]:
         "release_readiness": {
             "testflight": "archive tooling ready; App Store Connect upload not performed",
             "remote_notifications": "local notifications active; APNs provider credentials not configured",
-            "broker_execution": "Alpaca Paper only; disabled by default behind typed confirmation and local risk controls",
+            "broker_execution": "Alpaca Paper only; disabled by default behind explicit acknowledgement and local risk controls",
         },
     }
 
@@ -4623,7 +4623,7 @@ def sync_paper_account(path: Path, user_id: str) -> dict[str, Any]:
             "orders": orders,
             "fills": fills,
             "fetched_at": now_iso(),
-            "scope": "This synchronized mirror is read-only. Separate Alpaca Paper-only order endpoints remain locked by default behind typed confirmation, notional, daily-loss, and idempotency controls.",
+            "scope": "This synchronized mirror is read-only. Separate Alpaca Paper-only order endpoints remain locked by default behind explicit acknowledgement, notional, daily-loss, and idempotency controls.",
         }
         snapshot_id = str(uuid4())
         with open_db(path) as db:
@@ -4718,19 +4718,26 @@ def paper_order_control(path: Path, user_id: str) -> dict[str, Any]:
         "stop_triggered": guard["stop_triggered"],
         "paper_endpoint": "https://paper-api.alpaca.markets",
         "real_account_supported": False,
-        "required_confirmation": "ENABLE PAPER ORDERS" if not control["enabled"] else "DISABLE PAPER ORDERS",
-        "scope": "Alpaca Paper only. Every order also requires PAPER <SYMBOL>, a unique client order ID, and local risk checks.",
+        "required_acknowledgement": not control["enabled"],
+        "scope": "Alpaca Paper only. Enabling and submitting require a checkbox acknowledgement; every order also uses a unique client order ID and local risk checks.",
     }
+
+
+def _paper_action_acknowledged(
+    payload: dict[str, Any], legacy_confirmation: str
+) -> bool:
+    if payload.get("acknowledged") is True:
+        return True
+    confirmation = str(payload.get("confirmation") or "").strip()
+    return confirmation.casefold() == legacy_confirmation.casefold()
 
 
 def update_paper_order_control(
     path: Path, user_id: str, payload: dict[str, Any]
 ) -> dict[str, Any]:
     enabled = payload.get("enabled") is True
-    confirmation = str(payload.get("confirmation") or "").strip()
-    expected = "ENABLE PAPER ORDERS" if enabled else "DISABLE PAPER ORDERS"
-    if confirmation != expected:
-        raise InputError(f"Type {expected} to confirm this control change.")
+    if enabled and not _paper_action_acknowledged(payload, "ENABLE PAPER ORDERS"):
+        raise InputError("Check the Paper-only acknowledgement before enabling order routing.")
     maximum = to_micros(payload.get("max_order_notional", "1000"), "Maximum order notional")
     daily = to_micros(payload.get("daily_loss_limit", "300"), "Daily loss limit")
     if maximum > 1_000_000 * int(SCALE):
@@ -4810,8 +4817,8 @@ def submit_paper_order(path: Path, user_id: str, payload: dict[str, Any]) -> dic
     client_order_id = str(payload.get("client_order_id") or "").strip()
     if not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", client_order_id):
         raise InputError("Client order ID must be 8-64 letters, numbers, underscores, or hyphens.")
-    if str(payload.get("confirmation") or "").strip() != f"PAPER {symbol}":
-        raise InputError(f"Type PAPER {symbol} to confirm this simulated order.")
+    if not _paper_action_acknowledged(payload, f"PAPER {symbol}"):
+        raise InputError("Check the order acknowledgement before submitting this simulated order.")
     with open_db(path) as db:
         existing = db.execute(
             "SELECT * FROM paper_order_intents WHERE user_id = ? AND client_order_id = ?",
@@ -4886,7 +4893,7 @@ def cancel_paper_order(path: Path, user_id: str, order_id: str, payload: dict[st
         row = db.execute("SELECT * FROM paper_order_intents WHERE id = ? AND user_id = ?", (order_id, user_id)).fetchone()
     if not row:
         raise ApiError(404, "Paper order was not found.")
-    if str(payload.get("confirmation") or "") != f"CANCEL PAPER {row['symbol']}":
+    if not _paper_action_acknowledged(payload, f"CANCEL PAPER {row['symbol']}"):
         raise InputError(f"Type CANCEL PAPER {row['symbol']} to confirm.")
     if not row["broker_order_id"]:
         raise ApiError(409, "This order has no broker order ID to cancel.")
@@ -4907,7 +4914,7 @@ def replace_paper_order(path: Path, user_id: str, order_id: str, payload: dict[s
         row = db.execute("SELECT * FROM paper_order_intents WHERE id = ? AND user_id = ?", (order_id, user_id)).fetchone()
     if not row:
         raise ApiError(404, "Paper order was not found.")
-    if str(payload.get("confirmation") or "") != f"REPLACE PAPER {row['symbol']}":
+    if not _paper_action_acknowledged(payload, f"REPLACE PAPER {row['symbol']}"):
         raise InputError(f"Type REPLACE PAPER {row['symbol']} to confirm.")
     if not row["broker_order_id"] or row["status"] in {"filled", "canceled", "rejected", "failed"}:
         raise ApiError(409, "Only an active broker paper order can be replaced.")

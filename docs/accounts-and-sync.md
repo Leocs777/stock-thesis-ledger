@@ -58,7 +58,7 @@ Status: local-first reference implementation.
   point-in-time walk-forward execution-cost model that adds range and
   dollar-volume slippage surcharges to the saved base bps.
 - An Alpaca Paper mirror for balances, positions, historical order status, and
-  fills, plus a default-locked Paper-only order route with typed confirmation,
+  fills, plus a default-locked Paper-only order route with checkbox acknowledgement,
   idempotent client IDs, notional and daily-loss limits, and no live host.
 - Web server-sent Day Trade monitoring, iOS 20-second foreground monitoring,
   deduplicated setup alerts, and full cached minute-session playback. Options

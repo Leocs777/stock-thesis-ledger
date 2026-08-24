@@ -45,7 +45,7 @@ are part of the user's security boundary.
 ### Brokerage boundary
 
 All implemented broker mutations use `paper-api.alpaca.markets`. Paper-order
-actions still affect an external account, so they require typed confirmations,
+actions still affect an external account, so they require explicit acknowledgements,
 idempotency, a synchronized-account check, and local risk limits.
 
 ## Threats, controls, and residual risk
@@ -58,7 +58,7 @@ idempotency, a synchronized-account check, and local risk limits.
 | Cross-site request forgery | SameSite=Strict cookie plus CSRF on browser mutations | A browser or future route can regress if it bypasses shared guards |
 | Cross-account data access | User-scoped queries and route authentication | New queries require explicit authorization tests |
 | Provider-key leakage | Keys stay server-side and are omitted from exports/responses | Process inspection, shell history, logs, or compromised host can expose environment values |
-| Live-trade accident | Paper host constant, no live host, typed confirmations | A future contributor could weaken the invariant without tests and review |
+| Live-trade accident | Paper host constant, no live host, explicit acknowledgements | A future contributor could weaken the invariant without tests and review |
 | Duplicate Paper order | Client IDs and idempotency checks | Provider timeouts can leave uncertain external state that must be reconciled |
 | Stale or malformed market data | Cache timestamps, data-quality gates, explicit source labels | Provider errors and missing corporate actions can still distort analysis |
 | Database corruption or bad restore | Integrity checks, verified backups, safety copy | Local disk failure or untested off-device backup can still cause loss |
@@ -109,7 +109,7 @@ must include tests for failure and unauthorized paths. At minimum preserve:
 - iOS sessions do not bypass user scoping;
 - account exports omit credential and token material;
 - removed devices lose bound sessions;
-- Paper order enablement and ticker confirmations fail closed;
+- Paper order enablement and order acknowledgements fail closed;
 - idempotent Paper order retries do not duplicate a known intent; and
 - no source file introduces a live brokerage host.
 

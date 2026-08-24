@@ -365,7 +365,7 @@ private struct DashboardView: View {
     private var paperAccountMirror: some View {
         LabSection(
             title: "Alpaca Paper account mirror",
-            subtitle: "Read-only synchronized mirror; guarded Paper orders live in Command.",
+            subtitle: "Read-only synchronized mirror; Paper orders live in Command.",
             badge: "READ ONLY"
         ) {
             Button("Synchronize paper account") { Task { await store.synchronizePaperAccount() } }
@@ -1931,7 +1931,7 @@ private struct DayTradeWorkspace: View {
         LabGuardrailCard(
             eyebrow: "INTRADAY WORKSPACE",
             title: "Plan the exit before the entry.",
-            message: "Combine your own entry and invalidation with IEX real-time levels, Nasdaq halt status, and app-ledger stop conditions. Live-account orders remain blocked; Paper orders require Command confirmation."
+            message: "Combine your own entry and invalidation with IEX real-time levels, Nasdaq halt status, and app-ledger stop conditions. Live-account orders remain blocked; Paper orders require Command acknowledgement."
         )
         LabSection(
             title: "Watchlist day-trade scanner",
@@ -2424,14 +2424,14 @@ private struct CommandCenterView: View {
     @State private var paperEnabled = false
     @State private var paperMaximum = "1000"
     @State private var paperDailyStop = "300"
-    @State private var controlConfirmation = ""
+    @State private var controlAcknowledged = false
     @State private var orderSymbol = ""
     @State private var orderSide = "buy"
     @State private var orderType = "limit"
     @State private var orderQuantity = "1"
     @State private var orderLimit = ""
     @State private var orderStop = ""
-    @State private var orderConfirmation = ""
+    @State private var orderAcknowledged = false
     @State private var scannerName = "My cached screen"
     @State private var scannerSymbols = ""
     @State private var scannerScore = "0"
@@ -2479,7 +2479,7 @@ private struct CommandCenterView: View {
                 .font(.caption.weight(.bold)).tracking(1.2).foregroundStyle(Color.signalOrange)
             Text("One loop from signal to review.")
                 .font(.system(size: 31, weight: .semibold)).tracking(-0.7).foregroundStyle(.white)
-            Text("Cached scanner, guarded Alpaca Paper execution, evidence review, and synchronized reporting.")
+            Text("Cached scanner, Alpaca Paper execution, evidence review, and synchronized reporting.")
                 .font(.subheadline).foregroundStyle(.white.opacity(0.76))
             HStack {
                 Label("Paper endpoint", systemImage: "checkmark.shield.fill")
@@ -2499,7 +2499,7 @@ private struct CommandCenterView: View {
     private var paperExecution: some View {
         LabSection(
             title: "Alpaca Paper execution gate",
-            subtitle: "Real-account routing is not implemented. The server checks typed confirmation, order value, daily loss, position size, and duplicate IDs.",
+            subtitle: "Real-account routing is not implemented. The server checks acknowledgement, order value, daily loss, position size, and duplicate IDs.",
             badge: paperEnabled ? "ENABLED" : "LOCKED"
         ) {
             Toggle("Enable Alpaca Paper routing", isOn: $paperEnabled)
@@ -2507,22 +2507,24 @@ private struct CommandCenterView: View {
                 PlanningField("Order cap", text: $paperMaximum)
                 PlanningField("Daily loss stop", text: $paperDailyStop)
             }
-            PlanningField(
-                paperEnabled ? "Type ENABLE PAPER ORDERS" : "Type DISABLE PAPER ORDERS",
-                text: $controlConfirmation, keyboard: .default
-            )
+            if paperEnabled {
+                Toggle(
+                    "I understand this route is limited to Alpaca Paper and cannot reach a live account.",
+                    isOn: $controlAcknowledged
+                )
+            }
             Button("Save execution gate") {
                 Task {
                     if await store.updatePaperExecution(
                         enabled: paperEnabled, maximum: paperMaximum,
-                        dailyStop: paperDailyStop, confirmation: controlConfirmation
-                    ) { controlConfirmation = "" }
+                        dailyStop: paperDailyStop, acknowledged: controlAcknowledged
+                    ) { controlAcknowledged = false }
                 }
             }
             .buttonStyle(LabButtonStyle())
-            .disabled(store.isLoading)
+            .disabled(store.isLoading || (paperEnabled && !controlAcknowledged))
             Divider()
-            Text("GUARDED ORDER").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
+            Text("PAPER ORDER").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
             PlanningField("Symbol", text: $orderSymbol, keyboard: .default)
             HStack {
                 Picker("Side", selection: $orderSide) {
@@ -2543,18 +2545,21 @@ private struct CommandCenterView: View {
             if ["stop", "stop_limit"].contains(orderType) {
                 PlanningField("Stop price", text: $orderStop)
             }
-            PlanningField("Type PAPER SYMBOL", text: $orderConfirmation, keyboard: .default)
-            Button("Submit guarded paper order") {
+            Toggle(
+                "I reviewed the symbol, side, quantity, and prices for this simulated order.",
+                isOn: $orderAcknowledged
+            )
+            Button("Submit paper order") {
                 Task {
                     if await store.submitPaperOrder(
                         symbol: orderSymbol, side: orderSide, orderType: orderType,
                         quantity: orderQuantity, limitPrice: orderLimit,
-                        stopPrice: orderStop, confirmation: orderConfirmation
-                    ) { orderConfirmation = "" }
+                        stopPrice: orderStop, acknowledged: orderAcknowledged
+                    ) { orderAcknowledged = false }
                 }
             }
             .buttonStyle(LabButtonStyle())
-            .disabled(store.isLoading || orderSymbol.isEmpty)
+            .disabled(store.isLoading || orderSymbol.isEmpty || !orderAcknowledged)
             ForEach((store.paperOrderLedger?.orders ?? []).prefix(12)) { order in
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 3) {
@@ -2795,6 +2800,7 @@ private struct CommandCenterView: View {
         paperEnabled = control.enabled
         paperMaximum = control.maxOrderNotional
         paperDailyStop = control.dailyLossLimit
+        controlAcknowledged = false
     }
 }
 
@@ -4676,7 +4682,7 @@ private final class LabStore: ObservableObject {
     }
 
     func updatePaperExecution(
-        enabled: Bool, maximum: String, dailyStop: String, confirmation: String
+        enabled: Bool, maximum: String, dailyStop: String, acknowledged: Bool
     ) async -> Bool {
         isLoading = true
         defer { isLoading = false }
@@ -4685,7 +4691,7 @@ private final class LabStore: ObservableObject {
                 path: "/api/alpaca/paper-orders/control", method: "PATCH",
                 body: PaperOrderControlPayload(
                     enabled: enabled, maxOrderNotional: maximum,
-                    dailyLossLimit: dailyStop, confirmation: confirmation
+                    dailyLossLimit: dailyStop, acknowledged: acknowledged
                 )
             )
             researchCommandCenter = researchCommandCenter?.replacing(control: control)
@@ -4702,7 +4708,7 @@ private final class LabStore: ObservableObject {
 
     func submitPaperOrder(
         symbol: String, side: String, orderType: String, quantity: String,
-        limitPrice: String, stopPrice: String, confirmation: String
+        limitPrice: String, stopPrice: String, acknowledged: Bool
     ) async -> Bool {
         isLoading = true
         defer { isLoading = false }
@@ -4715,7 +4721,7 @@ private final class LabStore: ObservableObject {
                     limitPrice: limitPrice.isEmpty ? nil : limitPrice,
                     stopPrice: stopPrice.isEmpty ? nil : stopPrice,
                     clientOrderID: "ios-\(UUID().uuidString.lowercased())",
-                    confirmation: confirmation
+                    acknowledged: acknowledged
                 )
             )
             paperOrderLedger = try await request(
@@ -8584,9 +8590,9 @@ private struct PaperOrderControlPayload: Encodable {
     let enabled: Bool
     let maxOrderNotional: String
     let dailyLossLimit: String
-    let confirmation: String
+    let acknowledged: Bool
     enum CodingKeys: String, CodingKey {
-        case enabled, confirmation
+        case enabled, acknowledged
         case maxOrderNotional = "max_order_notional"
         case dailyLossLimit = "daily_loss_limit"
     }
@@ -8601,9 +8607,9 @@ private struct PaperOrderPayload: Encodable {
     let limitPrice: String?
     let stopPrice: String?
     let clientOrderID: String
-    let confirmation: String
+    let acknowledged: Bool
     enum CodingKeys: String, CodingKey {
-        case symbol, side, quantity, confirmation
+        case symbol, side, quantity, acknowledged
         case orderType = "order_type"
         case timeInForce = "time_in_force"
         case limitPrice = "limit_price"

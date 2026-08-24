@@ -116,6 +116,14 @@ class InvestorLabAPITest(unittest.TestCase):
             "60% technical · 25% fundamentals · 15% position fit",
             app_shell,
         )
+        self.assertIn('id="paperOrderControlAcknowledged"', app_shell)
+        self.assertIn('id="paperOrderAcknowledged"', app_shell)
+        self.assertNotIn('id="paperOrderConfirmation"', app_shell)
+
+        ios_app = (Path(__file__).parent / "ios" / "InvestorLab" / "InvestorLabApp.swift").read_text()
+        self.assertIn("controlAcknowledged", ios_app)
+        self.assertIn("orderAcknowledged", ios_app)
+        self.assertNotIn("orderConfirmation", ios_app)
 
         status, content_type, body = self.request_text("/design-system")
         self.assertEqual(status, 200)
@@ -2105,16 +2113,25 @@ class InvestorLabAPITest(unittest.TestCase):
                 "INSERT INTO market_daily VALUES ('AAPL', ?, 200000000, 201000000, 199000000, 200000000, 1000000, 'test', ?)",
                 (date.today().isoformat(), now_iso()),
             )
+        with self.assertRaises(HTTPError) as gate_error:
+            self.request(
+                "PATCH", "/api/alpaca/paper-orders/control",
+                {"enabled": True, "max_order_notional": "1000", "daily_loss_limit": "300"},
+            )
+        self.assertEqual(gate_error.exception.code, 400)
         _, control = self.request(
             "PATCH", "/api/alpaca/paper-orders/control",
-            {"enabled": True, "max_order_notional": "1000", "daily_loss_limit": "300", "confirmation": "ENABLE PAPER ORDERS"},
+            {"enabled": True, "max_order_notional": "1000", "daily_loss_limit": "300", "acknowledged": True},
         )
         self.assertTrue(control["enabled"])
         order_payload = {
             "symbol": "AAPL", "side": "buy", "order_type": "limit", "time_in_force": "day",
             "quantity": "2", "limit_price": "199", "client_order_id": "schema16-order-1",
-            "confirmation": "PAPER AAPL",
         }
+        with self.assertRaises(HTTPError) as order_error:
+            self.request("POST", "/api/alpaca/paper-orders", order_payload)
+        self.assertEqual(order_error.exception.code, 400)
+        order_payload["acknowledged"] = True
         broker_order = {"id": "paper-order-1", "status": "accepted", "filled_qty": "0"}
         with patch("app._alpaca_credentials", return_value=("key", "secret", "test")), patch(
             "app._alpaca_trading_mutation", return_value=broker_order
@@ -2129,6 +2146,16 @@ class InvestorLabAPITest(unittest.TestCase):
                 {"confirmation": "CANCEL PAPER AAPL"},
             )
         self.assertEqual(mutation.call_count, 2)
+        _, legacy_locked = self.request(
+            "PATCH", "/api/alpaca/paper-orders/control",
+            {"enabled": False, "max_order_notional": "1000", "daily_loss_limit": "300"},
+        )
+        self.assertFalse(legacy_locked["enabled"])
+        _, legacy_enabled = self.request(
+            "PATCH", "/api/alpaca/paper-orders/control",
+            {"enabled": True, "max_order_notional": "1000", "daily_loss_limit": "300", "confirmation": "enable paper orders"},
+        )
+        self.assertTrue(legacy_enabled["enabled"])
         _, ledger = self.request("GET", "/api/alpaca/paper-orders")
         self.assertEqual(ledger["orders"][0]["status"], "canceled")
 

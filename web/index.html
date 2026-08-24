@@ -295,6 +295,8 @@
     .planner-form .span-2 { grid-column: span 2; }
     .planner-form .span-4 { grid-column: 1 / -1; }
     .planner-form .primary-button { min-height: 42px; }
+    .acknowledgement { grid-column: 1 / -1; display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; color: var(--ink-soft); background: rgba(255,255,255,.68); line-height: 1.45; }
+    .acknowledgement input { width: 18px; height: 18px; flex: 0 0 auto; margin: 0; padding: 0; accent-color: var(--positive); }
     .plan-result { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--line); }
     .plan-result .status-grid { margin-top: 0; }
     .plan-status { margin-top: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 9px; color: var(--muted); font-size: 11px; }
@@ -961,8 +963,8 @@
 
         <section class="view" data-page="command">
           <section class="mode-hero">
-            <article class="brief-card"><p class="eyebrow">Research operating system</p><h1>One loop from signal to review.</h1><p>Scan cached symbols, test the evidence, stage a guarded Alpaca Paper order, then preserve the outcome in the same synchronized ledger.</p></article>
-            <article class="guard-card"><h2>Execution boundary</h2><ul class="guard-list"><li>Paper endpoint is fixed in server code</li><li>Order routing is disabled by default</li><li>Typed confirmation and unique IDs are required</li><li>Real account routing is not implemented</li></ul></article>
+            <article class="brief-card"><p class="eyebrow">Research operating system</p><h1>One loop from signal to review.</h1><p>Scan cached symbols, test the evidence, submit an Alpaca Paper order, then preserve the outcome in the same synchronized ledger.</p></article>
+            <article class="guard-card"><h2>Execution boundary</h2><ul class="guard-list"><li>Paper endpoint is fixed in server code</li><li>Order routing is disabled by default</li><li>Checkbox acknowledgement and unique IDs are required</li><li>Real account routing is not implemented</li></ul></article>
           </section>
           <section class="grid">
             <article class="panel wide">
@@ -972,7 +974,7 @@
                 <label><span>Paper routing</span><select id="paperOrderEnabled"><option value="false">Disabled</option><option value="true">Enabled</option></select></label>
                 <label><span>Maximum order value · USD</span><input id="paperOrderMaximum" type="number" min="1" max="1000000" step="0.01" value="1000" required></label>
                 <label><span>Daily loss stop · USD</span><input id="paperOrderDailyStop" type="number" min="1" max="1000000" step="0.01" value="300" required></label>
-                <label><span>Control confirmation</span><input id="paperOrderControlConfirmation" autocomplete="off" placeholder="ENABLE PAPER ORDERS" required></label>
+                <label class="acknowledgement"><input id="paperOrderControlAcknowledged" type="checkbox"><span>I understand this route is limited to Alpaca Paper and cannot reach a live account.</span></label>
                 <button class="primary-button lab-button span-4" type="submit">Save paper execution control</button>
               </form>
               <hr class="panel-divider">
@@ -984,8 +986,8 @@
                 <label><span>Quantity</span><input id="paperOrderQuantity" type="number" min="0.000001" step="0.000001" value="1" required></label>
                 <label><span>Limit price</span><input id="paperOrderLimit" type="number" min="0.000001" step="0.000001"></label>
                 <label><span>Stop price</span><input id="paperOrderStop" type="number" min="0.000001" step="0.000001"></label>
-                <label><span>Order confirmation</span><input id="paperOrderConfirmation" autocomplete="off" placeholder="PAPER AAPL" required></label>
-                <button class="primary-button lab-button span-4" type="submit">Submit guarded paper order</button>
+                <label class="acknowledgement"><input id="paperOrderAcknowledged" type="checkbox" required><span>I reviewed the symbol, side, quantity, and prices for this simulated order.</span></label>
+                <button class="primary-button lab-button span-4" type="submit">Submit paper order</button>
               </form>
               <div class="plan-history" id="paperOrderHistory"><span class="empty">No Investor Lab paper orders.</span></div>
             </article>
@@ -2169,11 +2171,11 @@
       "PAPER MODE / REAL ACCOUNT BLOCKED": "模拟模式 / 已阻止真实账户",
       "Research operating system": "研究操作系统",
       "One loop from signal to review.": "从信号到复盘的完整闭环。",
-      "Scan cached symbols, test the evidence, stage a guarded Alpaca Paper order, then preserve the outcome in the same synchronized ledger.": "扫描缓存标的、验证证据、提交受保护的 Alpaca 模拟订单，并在同一同步账本中保存结果。",
+      "Scan cached symbols, test the evidence, submit an Alpaca Paper order, then preserve the outcome in the same synchronized ledger.": "扫描缓存标的、验证证据、提交 Alpaca 模拟订单，并在同一同步账本中保存结果。",
       "Execution boundary": "执行边界",
       "Paper endpoint is fixed in server code": "模拟交易地址固定在服务器代码中",
       "Order routing is disabled by default": "订单路由默认关闭",
-      "Typed confirmation and unique IDs are required": "必须输入确认词并使用唯一订单编号",
+      "Checkbox acknowledgement and unique IDs are required": "必须勾选确认并使用唯一订单编号",
       "Real account routing is not implemented": "未实现真实账户路由",
       "Alpaca Paper execution gate": "Alpaca 模拟交易闸门",
       "Enable only after synchronizing the paper account. Local notional, daily-loss, position, and duplicate-order controls run before the broker request.": "仅在同步模拟账户后启用。发送券商请求前会先执行本地订单金额、每日亏损、持仓和重复订单检查。",
@@ -2183,9 +2185,9 @@
       "Enabled": "已启用",
       "Maximum order value · USD": "单笔订单上限 · 美元",
       "Daily loss stop · USD": "每日亏损停止线 · 美元",
-      "Control confirmation": "控制确认词",
+      "I understand this route is limited to Alpaca Paper and cannot reach a live account.": "我理解此路由仅连接 Alpaca 模拟账户，无法访问真实交易账户。",
       "Save paper execution control": "保存模拟交易控制",
-      "Order confirmation": "订单确认词",
+      "I reviewed the symbol, side, quantity, and prices for this simulated order.": "我已核对该模拟订单的代码、方向、数量和价格。",
       "Sell held shares": "卖出已持股份",
       "Order type": "订单类型",
       "Limit": "限价单",
@@ -2196,7 +2198,7 @@
       "Good until canceled": "撤销前有效",
       "Limit price": "限价",
       "Stop price": "止损触发价",
-      "Submit guarded paper order": "提交受保护的模拟订单",
+      "Submit paper order": "提交模拟订单",
       "No Investor Lab paper orders.": "暂无 Investor Lab 模拟订单。",
       "Cached universe scanner": "缓存标的扫描器",
       "Screen up to 250 cached symbols without making a paid scan request. Symbols without a decision remain data-required.": "最多筛选 250 个缓存标的，不产生付费扫描请求。没有决策的标的继续标记为需要数据。",
@@ -3516,7 +3518,10 @@
       $("paperOrderEnabled").value = String(control.enabled);
       $("paperOrderMaximum").value = control.max_order_notional;
       $("paperOrderDailyStop").value = control.daily_loss_limit;
-      $("paperOrderControlConfirmation").placeholder = control.enabled ? "DISABLE PAPER ORDERS" : "ENABLE PAPER ORDERS";
+      const controlAcknowledgement = $("paperOrderControlAcknowledged");
+      controlAcknowledgement.checked = false;
+      controlAcknowledgement.disabled = !control.enabled;
+      controlAcknowledgement.required = control.enabled;
       $("paperOrderControlMetrics").innerHTML = [
         ["Routing", control.enabled ? "Paper enabled" : "Locked", control.real_account_supported ? "Unexpected" : "Real account blocked"],
         ["Order cap", money(control.max_order_notional), "Per submitted order"],
@@ -4424,9 +4429,9 @@
           enabled: $("paperOrderEnabled").value === "true",
           max_order_notional: $("paperOrderMaximum").value,
           daily_loss_limit: $("paperOrderDailyStop").value,
-          confirmation: $("paperOrderControlConfirmation").value
+          acknowledged: $("paperOrderControlAcknowledged").checked
         }) });
-        $("paperOrderControlConfirmation").value = "";
+        $("paperOrderControlAcknowledged").checked = false;
         renderPaperOrderControl(control);
         notify(control.enabled ? "Alpaca Paper order gate enabled." : "Alpaca Paper order gate locked.");
       } catch (error) { notify(error.message); }
@@ -4446,21 +4451,20 @@
           limit_price: ["limit", "stop_limit"].includes(type) ? $("paperOrderLimit").value : null,
           stop_price: ["stop", "stop_limit"].includes(type) ? $("paperOrderStop").value : null,
           client_order_id: `web-${crypto.randomUUID()}`,
-          confirmation: $("paperOrderConfirmation").value
+          acknowledged: $("paperOrderAcknowledged").checked
         }) });
-        $("paperOrderConfirmation").value = "";
+        $("paperOrderAcknowledged").checked = false;
         renderPaperOrders(await request("/api/alpaca/paper-orders"));
-        notify("Guarded Alpaca Paper order submitted.");
+        notify("Alpaca Paper order submitted.");
       } catch (error) { notify(error.message); }
       finally { button.disabled = false; }
     });
 
-    $("paperOrderSymbol").addEventListener("input", event => {
-      const symbol = event.currentTarget.value.trim().toUpperCase();
-      $("paperOrderConfirmation").placeholder = symbol ? `PAPER ${symbol}` : "PAPER AAPL";
-    });
     $("paperOrderEnabled").addEventListener("change", event => {
-      $("paperOrderControlConfirmation").placeholder = event.currentTarget.value === "true" ? "ENABLE PAPER ORDERS" : "DISABLE PAPER ORDERS";
+      const enabling = event.currentTarget.value === "true";
+      $("paperOrderControlAcknowledged").checked = false;
+      $("paperOrderControlAcknowledged").disabled = !enabling;
+      $("paperOrderControlAcknowledged").required = enabling;
     });
 
     $("paperOrderHistory").addEventListener("click", async event => {
