@@ -33,6 +33,20 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 
+def _configure_tls_ca_environment(
+    platform_name: str | None = None, ca_bundle: Path | None = None
+) -> None:
+    """Use the maintained macOS trust bundle when python.org lacks its own."""
+    if (platform_name or sys.platform) != "darwin" or os.environ.get("SSL_CERT_FILE"):
+        return
+    bundle = ca_bundle or Path("/etc/ssl/cert.pem")
+    if bundle.is_file():
+        os.environ["SSL_CERT_FILE"] = str(bundle)
+
+
+_configure_tls_ca_environment()
+
+
 ROOT = Path(__file__).resolve().parent
 DEFAULT_DB = ROOT / "data" / "investor-lab.sqlite3"
 DEFAULT_WEB_ROOT = ROOT / "web"
@@ -42,7 +56,7 @@ OCC_OPTION_RE = re.compile(r"^([A-Z]{1,6})(\d{6})([CP])(\d{8})$")
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
 SCHEMA_VERSION = 16
-APP_VERSION = "0.1.1"
+APP_VERSION = "0.1.2"
 DECISION_MODEL_VERSION = "decision-v4.1"
 STRATEGY_FREEZE_PROTOCOL = "full-context-v1"
 SESSION_DAYS = 30

@@ -9,7 +9,7 @@ Paper-only execution boundary.
 
 [![CI](https://github.com/Leocs777/stock-thesis-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/Leocs777/stock-thesis-ledger/actions/workflows/ci.yml)
 [![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-22313f.svg)](LICENSE)
-[![Release: v0.1.1](https://img.shields.io/badge/release-v0.1.1-1d4ed8.svg)](#v011-scope)
+[![Release: v0.1.2](https://img.shields.io/badge/release-v0.1.2-1d4ed8.svg)](#v012-hotfix)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-0f766e.svg)](#quick-start)
 [![Paper only](https://img.shields.io/badge/brokerage-Paper_only-e85d2a.svg)](#safety-boundary)
 
@@ -39,6 +39,15 @@ evidence; the journal, worksheets, sync, and paper ledger remain local.
 [Read the strategy methodology](docs/strategy-methodology.md) ·
 [Run a Paper validation campaign](docs/paper-validation-protocol.md) ·
 [Understand the safety model](#safety-boundary)
+
+## v0.1.2 hotfix
+
+Version 0.1.2 fixes macOS TLS verification for python.org Python installations
+whose bundled CA path is empty. The server selects the maintained macOS system
+CA bundle without disabling certificate verification or replacing an explicit
+operator-provided bundle. This restores Alpha Vantage, Alpaca Market Data, and
+Alpaca Paper API connections when the application is started directly with
+`python3 app.py`.
 
 ## v0.1.1 scope
 

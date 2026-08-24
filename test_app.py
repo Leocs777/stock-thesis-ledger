@@ -15,6 +15,7 @@ from unittest.mock import patch
 
 from app import (
     InputError,
+    _configure_tls_ca_environment,
     _sec_filing_comparison,
     ThreadingHTTPServer,
     init_db,
@@ -69,6 +70,16 @@ class InvestorLabAPITest(unittest.TestCase):
         self.server.shutdown()
         self.server.server_close()
         self.temp.cleanup()
+
+    def test_macos_tls_uses_system_ca_without_overriding_an_explicit_bundle(self):
+        ca_bundle = Path(self.temp.name) / "cert.pem"
+        ca_bundle.write_text("test bundle")
+        with patch.dict(os.environ, {"SSL_CERT_FILE": ""}):
+            _configure_tls_ca_environment("darwin", ca_bundle)
+            self.assertEqual(os.environ["SSL_CERT_FILE"], str(ca_bundle))
+        with patch.dict(os.environ, {"SSL_CERT_FILE": "/custom/cert.pem"}):
+            _configure_tls_ca_environment("darwin", ca_bundle)
+            self.assertEqual(os.environ["SSL_CERT_FILE"], "/custom/cert.pem")
 
     def request(self, method, path, payload=None, *, csrf=True, bearer=None):
         body = json.dumps(payload).encode() if payload is not None else None
