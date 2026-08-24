@@ -25,6 +25,8 @@
         <string>0</string>
         <key>INVESTORLAB_INTRADAY_SYMBOL_LIMIT</key>
         <string>8</string>
+        <key>INVESTORLAB_OPTION_COLLECTION</key>
+        <string>1</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>

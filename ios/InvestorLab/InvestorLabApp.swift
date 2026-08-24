@@ -2628,6 +2628,18 @@ private struct CommandCenterView: View {
                 Task { await store.addNotificationRule(kind: ruleKind, symbol: ruleSymbol, threshold: ruleThreshold) }
             }
             .buttonStyle(.bordered).disabled(store.isLoading)
+            ForEach(store.notificationRuleCenter?.operationalAlerts ?? []) { alert in
+                HStack(alignment: .top, spacing: 9) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Color.signalOrange)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(labLocalized(alert.kind.replacingOccurrences(of: "_", with: " ")))
+                            .font(.subheadline.weight(.semibold))
+                        Text(labLocalized(alert.detail))
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+            }
             ForEach(store.notificationRuleCenter?.rules ?? []) { rule in
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
@@ -3022,6 +3034,35 @@ private struct JournalView: View {
                                     Spacer()
                                     Text("\(gate.value) / \(gate.required)").font(.caption.monospacedDigit())
                                 }
+                            }
+                            if let operations = validation.operations {
+                                HStack(spacing: 10) {
+                                    LabMetricCard(
+                                        label: "Daily decisions",
+                                        value: operations.automation.dailyDecisions ? "Running" : "Blocked",
+                                        detail: "Every \(operations.automation.refreshIntervalHours) hours"
+                                    )
+                                    LabMetricCard(
+                                        label: "Intraday + options",
+                                        value: operations.automation.intradayCollection && operations.automation.optionCollection ? "Running" : "Blocked",
+                                        detail: "Missing data never counts"
+                                    )
+                                }
+                                ForEach(operations.blockers + operations.warnings) { item in
+                                    HStack(alignment: .top, spacing: 9) {
+                                        Image(systemName: operations.blockers.contains(where: { $0.id == item.id }) ? "exclamationmark.octagon.fill" : "exclamationmark.triangle.fill")
+                                            .foregroundStyle(operations.blockers.contains(where: { $0.id == item.id }) ? Color.red : Color.signalOrange)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(labLocalized(item.label)).font(.caption.weight(.semibold))
+                                            Text(labLocalized(item.detail)).font(.caption2).foregroundStyle(.secondary)
+                                        }
+                                    }
+                                }
+                                Button("Run validation cycle") {
+                                    Task { await store.runValidationCycle() }
+                                }
+                                .buttonStyle(LabButtonStyle())
+                                .disabled(store.isLoading)
                             }
                             Text(labLocalized(validation.campaign.instruction)).font(.caption2).foregroundStyle(.secondary)
                             Text(labLocalized(validation.scope)).font(.caption2).foregroundStyle(.secondary)
@@ -4581,10 +4622,12 @@ private final class LabStore: ObservableObject {
                 path: "/api/alpaca/paper-orders", method: "GET",
                 body: Optional<EmptyPayload>.none
             )
-            notificationRuleCenter = try await request(
+            let notifications: NotificationRuleCenter = try await request(
                 path: "/api/notifications/rules", method: "GET",
                 body: Optional<EmptyPayload>.none
             )
+            notificationRuleCenter = notifications
+            await notifyOperationalAlertsIfAuthorized(notifications)
             portfolioIntelligence = try await request(
                 path: "/api/portfolio/intelligence", method: "GET",
                 body: Optional<EmptyPayload>.none
@@ -4599,6 +4642,36 @@ private final class LabStore: ObservableObject {
             )
         } catch {
             if (error as? LabError)?.status != 401 { errorMessage = error.localizedDescription }
+        }
+    }
+
+    private func notifyOperationalAlertsIfAuthorized(_ notifications: NotificationRuleCenter) async {
+        guard let user = currentUser else { return }
+        let center = UNUserNotificationCenter.current()
+        let settings = await center.notificationSettings()
+        guard settings.authorizationStatus == .authorized
+                || settings.authorizationStatus == .provisional else { return }
+        let defaults = UserDefaults.standard
+        let key = "operationalAlertsSeen.\(user.id)"
+        let seen = Set(defaults.stringArray(forKey: key) ?? [])
+        let current = Set(notifications.operationalAlerts.map(\.id))
+        do {
+            for alert in notifications.operationalAlerts where !seen.contains(alert.id) {
+                let content = UNMutableNotificationContent()
+                content.title = labLocalized(alert.kind.replacingOccurrences(of: "_", with: " "))
+                content.body = labLocalized(alert.detail)
+                content.sound = .default
+                try await center.add(
+                    UNNotificationRequest(
+                        identifier: "investorlab-operation-\(alert.id)",
+                        content: content,
+                        trigger: UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+                    )
+                )
+            }
+            defaults.set(Array(current), forKey: key)
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 
@@ -5031,6 +5104,24 @@ private final class LabStore: ObservableObject {
         }
     }
 
+    func runValidationCycle() async {
+        guard authState == .signedIn else { return }
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let result: ValidationCycleResult = try await request(
+                path: "/api/validation/run", method: "POST", body: EmptyPayload()
+            )
+            validationDashboard = result.dashboard
+            systemHealth = try await request(
+                path: "/api/system/health", method: "GET", body: Optional<EmptyPayload>.none
+            )
+            await loadCommandCenter()
+        } catch {
+            if (error as? LabError)?.status != 401 { errorMessage = error.localizedDescription }
+        }
+    }
+
     func enableExpirationReminders() async {
         do {
             let center = UNUserNotificationCenter.current()
@@ -5274,7 +5365,9 @@ private final class LabStore: ObservableObject {
 
     private func scheduleDecisionReminder() async throws {
         let center = UNUserNotificationCenter.current()
-        center.removePendingNotificationRequests(withIdentifiers: ["investorlab-decision-daily"])
+        center.removePendingNotificationRequests(withIdentifiers: [
+            "investorlab-decision-daily", "investorlab-plan-review-daily"
+        ])
         let content = UNMutableNotificationContent()
         content.title = "Review today’s decisions"
         content.body = "Open Investor Lab to sync refreshed watchlist scores and signal changes."
@@ -5289,7 +5382,30 @@ private final class LabStore: ObservableObject {
                 trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
             )
         )
-        decisionReminderStatus = "Daily at 9:15 AM"
+        let reviewCount = snapshot.planReviewCenter.awaitingReview
+            + snapshot.planReviewCenter.activeFollowed
+        if reviewCount > 0 {
+            let reviewContent = UNMutableNotificationContent()
+            reviewContent.title = labLocalized("Close the paper-plan loop")
+            reviewContent.body = labLocalized(
+                "\(reviewCount) saved plan(s) need a followed/skipped choice or outcome review."
+            )
+            reviewContent.sound = .default
+            var reviewComponents = DateComponents()
+            reviewComponents.hour = 16
+            reviewComponents.minute = 30
+            try await center.add(
+                UNNotificationRequest(
+                    identifier: "investorlab-plan-review-daily",
+                    content: reviewContent,
+                    trigger: UNCalendarNotificationTrigger(
+                        dateMatching: reviewComponents, repeats: true
+                    )
+                )
+            )
+        }
+        decisionReminderStatus = reviewCount > 0
+            ? "Daily at 9:15 AM · review at 4:30 PM" : "Daily at 9:15 AM"
     }
 
     private func refreshFilingNotificationsIfAuthorized() async {
@@ -7151,10 +7267,11 @@ private struct ValidationDashboard: Decodable {
     let paperReviews: PaperReviewValidation
     let coverage: ValidationCoverage
     let campaign: ValidationCampaign
+    let operations: ValidationOperations?
     let scope: String
 
     enum CodingKeys: String, CodingKey {
-        case scope, coverage, campaign
+        case scope, coverage, campaign, operations
         case windowDays = "window_days"
         case observationDays = "observation_days"
         case readyForCapitalReview = "ready_for_capital_review"
@@ -7162,6 +7279,59 @@ private struct ValidationDashboard: Decodable {
         case decisionValidation = "decision_validation"
         case paperReviews = "paper_reviews"
     }
+}
+
+private struct ValidationOperations: Decodable {
+    let status: String
+    let pool: ValidationPool
+    let automation: ValidationAutomation
+    let blockers: [ValidationOperationItem]
+    let warnings: [ValidationOperationItem]
+    let instruction: String
+}
+
+private struct ValidationPool: Decodable {
+    let symbols: [String]
+    let count: Int
+    let required: Int
+}
+
+private struct ValidationAutomation: Decodable {
+    let schedulerRunning: Bool
+    let dailyDecisions: Bool
+    let refreshIntervalHours: Int
+    let intradayCollection: Bool
+    let optionCollection: Bool
+    let verifiedDailyBackup: Bool
+    let dailyWeeklyReports: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case schedulerRunning = "scheduler_running"
+        case dailyDecisions = "daily_decisions"
+        case refreshIntervalHours = "refresh_interval_hours"
+        case intradayCollection = "intraday_collection"
+        case optionCollection = "option_collection"
+        case verifiedDailyBackup = "verified_daily_backup"
+        case dailyWeeklyReports = "daily_weekly_reports"
+    }
+}
+
+private struct ValidationOperationItem: Decodable, Identifiable {
+    let key: String
+    let label: String
+    let detail: String
+    var id: String { key }
+}
+
+private struct ValidationCycleResult: Decodable {
+    let status: String
+    let blocked: [ValidationCycleBlocker]
+    let dashboard: ValidationDashboard
+}
+
+private struct ValidationCycleBlocker: Decodable {
+    let component: String
+    let error: String
 }
 
 private struct ValidationCampaign: Decodable {
@@ -8274,10 +8444,12 @@ private struct UniverseScanRow: Decodable, Identifiable {
 
 private struct NotificationRuleCenter: Decodable {
     let rules: [NotificationRule]
+    let operationalAlerts: [NotificationRule]
     let activeCount: Int
     let scope: String
     enum CodingKeys: String, CodingKey {
         case rules, scope
+        case operationalAlerts = "operational_alerts"
         case activeCount = "active_count"
     }
 }

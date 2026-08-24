@@ -153,6 +153,9 @@ Authenticated routes:
 - `POST /api/system/health-check`
 - `GET /api/system/backups`
 - `POST /api/system/backup`
+- `GET /api/validation/dashboard`
+- `GET /api/validation/report`
+- `POST /api/validation/run`
 - `POST /api/system/restore`
 - `GET /api/imports`
 - `POST /api/imports/portfolio/preview`

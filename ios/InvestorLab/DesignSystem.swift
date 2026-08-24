@@ -35,6 +35,24 @@ func labLocalized(_ source: String) -> String {
     if source.hasSuffix(" open positions"), let count = source.split(separator: " ").first {
         return "\(count) 个未平仓持仓"
     }
+    if source.contains(" configured; add "), source.hasSuffix(" more liquid symbols.") {
+        return source
+            .replacingOccurrences(of: " configured; add ", with: " 个已配置；还需添加 ")
+            .replacingOccurrences(of: " more liquid symbols.", with: " 个流动性良好的标的。")
+    }
+    if source.hasSuffix(" saved plan(s) have no followed/skipped decision."),
+       let count = source.split(separator: " ").first {
+        return "\(count) 个已保存计划尚未记录执行或跳过决定。"
+    }
+    if source.hasSuffix(" saved plan(s) need a followed/skipped choice or outcome review."),
+       let count = source.split(separator: " ").first {
+        return "\(count) 个已保存计划需要记录执行/跳过决定或结果复盘。"
+    }
+    if source.hasPrefix("Validation coverage has "), source.hasSuffix(" of 5 required symbols.") {
+        return source
+            .replacingOccurrences(of: "Validation coverage has ", with: "验证覆盖已有 ")
+            .replacingOccurrences(of: " of 5 required symbols.", with: " 个标的，共需要 5 个。")
+    }
     if source.hasSuffix(" annual periods"), let count = source.split(separator: " ").first {
         return "\(count) 个年度期间"
     }

@@ -1683,6 +1683,56 @@ class InvestorLabAPITest(unittest.TestCase):
         )
         self.assertEqual(symbol_gate["value"], 2)
 
+    def test_validation_operations_reports_and_missing_providers_are_explicit(self):
+        self.register()
+        for symbol in ("AAPL", "SOXX", "SPY", "MSFT", "JPM"):
+            self.request("POST", "/api/watchlist", {"symbol": symbol})
+        self.request(
+            "PATCH", "/api/decision-settings",
+            {"auto_refresh_enabled": True, "refresh_interval_hours": 24},
+        )
+        with patch("app._alpha_vantage_api_key", return_value=("", "unconfigured")), \
+             patch("app._alpaca_credentials", return_value=("", "", "unconfigured")), \
+             patch.dict(os.environ, {
+                 "INVESTORLAB_INTRADAY_COLLECTION": "1",
+                 "INVESTORLAB_OPTION_COLLECTION": "1",
+             }):
+            _, dashboard = self.request("GET", "/api/validation/dashboard?window_days=60")
+            self.assertEqual(dashboard["operations"]["pool"]["count"], 5)
+            self.assertFalse(dashboard["operations"]["automation"]["daily_decisions"])
+            self.assertEqual(
+                [item["key"] for item in dashboard["operations"]["blockers"]],
+                ["alpha_vantage"],
+            )
+
+            _, notifications = self.request("GET", "/api/notifications/rules")
+            operation_ids = {item["id"] for item in notifications["operational_alerts"]}
+            self.assertIn("operation:alpha-vantage", operation_ids)
+            self.assertIn("operation:alpaca", operation_ids)
+
+            _, exported = self.request("GET", "/api/validation/report")
+            self.assertTrue(exported["filename"].endswith(".md"))
+            self.assertIn("## Readiness gates", exported["markdown"])
+
+            _, cycle = self.request("POST", "/api/validation/run", {})
+            self.assertEqual(cycle["status"], "partial")
+            self.assertEqual(
+                {item["component"] for item in cycle["blocked"]},
+                {"daily_decisions", "intraday_options"},
+            )
+            _, reports = self.request("GET", "/api/reports")
+            self.assertEqual({item["period"] for item in reports}, {"daily", "weekly"})
+            with open_db(self.db) as db:
+                validation_run = db.execute(
+                    "SELECT status FROM data_collection_runs "
+                    "WHERE job_type = 'validation_cycle' ORDER BY started_at DESC LIMIT 1"
+                ).fetchone()
+                misleading_intraday = db.execute(
+                    "SELECT COUNT(*) FROM data_collection_runs WHERE job_type = 'intraday_scan'"
+                ).fetchone()[0]
+            self.assertEqual(validation_run["status"], "partial")
+            self.assertEqual(misleading_intraday, 0)
+
     def test_stored_decision_outcome_validation_uses_later_bars(self):
         self.register()
         with open_db(self.db) as db:

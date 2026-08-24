@@ -920,6 +920,12 @@
             <div class="panel-head"><div><h2>30–60 day validation campaign</h2><p class="panel-subtitle">Frozen strategy context, multi-stock coverage, decision outcomes, paper reviews, and market-data evidence in one capital-readiness check.</p></div><span class="tag warning lab-badge" id="validationBadge" data-tone="warning">NOT STARTED</span></div>
             <div class="status-grid" id="validationMetrics"></div>
             <div class="compact-list" id="validationGates"></div>
+            <div class="compact-list" id="validationAutomation"></div>
+            <div class="compact-list" id="validationBlockers"></div>
+            <div class="button-row">
+              <button class="primary-button lab-button" id="validationRunButton" type="button">Run validation cycle</button>
+              <button class="account-chip" id="validationReportButton" type="button">Export validation report</button>
+            </div>
             <p class="scenario-line" id="validationScope"></p>
           </article>
           <article class="panel" style="margin-top:14px">
@@ -2097,6 +2103,35 @@
       "30-day validation gate": "30 天验证门槛",
       "30–60 day validation campaign": "30–60 天验证计划",
       "Frozen strategy context, multi-stock coverage, decision outcomes, paper reviews, and market-data evidence in one capital-readiness check.": "在一次资金评估中检查冻结策略配置、多股票覆盖、决策结果、模拟复盘与市场数据证据。",
+      "Run validation cycle": "运行验证周期",
+      "Export validation report": "导出验证报告",
+      "Validation cycle completed.": "验证周期已完成。",
+      "Validation report exported.": "验证报告已导出。",
+      "Automation status": "自动化状态",
+      "Daily decisions": "每日决策",
+      "Intraday collection": "日内数据采集",
+      "Option collection": "期权数据采集",
+      "Verified daily backup": "每日已验证备份",
+      "Daily and weekly reports": "日报与周报",
+      "Running": "运行中",
+      "Blocked": "已阻塞",
+      "Enabled": "已启用",
+      "Daily market provider required": "需要日线行情数据源",
+      "Save an Alpha Vantage key in Settings before automatic daily decisions can run.": "请先在设置中保存 Alpha Vantage 密钥，才能运行自动每日决策。",
+      "Validation pool needs five symbols": "验证池需要五个标的",
+      "Daily decision schedule is off": "每日决策计划尚未开启",
+      "Enable the 24-hour decision refresh schedule to accumulate frozen evidence.": "启用每 24 小时决策刷新计划，以持续积累冻结证据。",
+      "Intraday and option collection paused": "日内与期权采集已暂停",
+      "Save Alpaca Paper/IEX credentials to collect minute bars and indicative option snapshots.": "保存 Alpaca Paper/IEX 凭据以采集分钟 K 线和指示性期权快照。",
+      "Paper plans await review": "模拟计划等待复盘",
+      "Recent collection needs attention": "近期采集需要处理",
+      "Automatic daily decisions are blocked until an Alpha Vantage key is saved.": "保存 Alpha Vantage 密钥前，自动每日决策处于阻塞状态。",
+      "Intraday and option collection are paused until Alpaca Paper/IEX credentials are saved.": "保存 Alpaca Paper/IEX 凭据前，日内与期权采集保持暂停。",
+      "data source": "数据源",
+      "validation gap": "验证缺口",
+      "plan review": "计划复盘",
+      "collection failure": "采集失败",
+      "Clear blocking setup items, keep one strategy context frozen, and let the local scheduler collect evidence. Missing provider data never counts as a completed sample.": "清除阻塞配置，保持同一策略环境冻结，并让本地调度器持续收集证据。缺失的数据源结果绝不会计为已完成样本。",
       "NOT STARTED": "尚未开始",
       "not_started": "尚未开始",
       "collecting": "收集中",
@@ -2275,6 +2310,11 @@
         [/^Cached close (.+) is at or above (.+)\.$/, (_, price, threshold) => `缓存收盘价 ${price} 已达到或高于 ${threshold}。`],
         [/^Cached close (.+) is at or below (.+)\.$/, (_, price, threshold) => `缓存收盘价 ${price} 已达到或低于 ${threshold}。`],
         [/^(\d+) saved plan\(s\) have no recorded decision\.$/, (_, count) => `${count} 个已保存计划尚未记录决策。`],
+        [/^(\d+) configured; add (\d+) more liquid symbols\.$/, (_, current, remaining) => `已配置 ${current} 个；还需添加 ${remaining} 个流动性良好的标的。`],
+        [/^(\d+) saved plan\(s\) have no followed\/skipped decision\.$/, (_, count) => `${count} 个已保存计划尚未记录执行或跳过决定。`],
+        [/^(\d+) failed or partial run\(s\) in the last 48 hours\.$/, (_, count) => `过去 48 小时有 ${count} 个失败或部分完成的任务。`],
+        [/^Validation coverage has (\d+) of 5 required symbols\.$/, (_, count) => `验证覆盖已有 ${count} 个标的，共需要 5 个。`],
+        [/^(\d+) saved paper plan\(s\) await a followed or skipped review\.$/, (_, count) => `${count} 个模拟计划等待记录执行或跳过复盘。`],
         [/^Revision (\d+)$/, (_, value) => `修订 ${value}`],
         [/^Last seen (.+)$/, (_, value) => `上次在线 ${value}`],
         [/^(\d+) positions$/, (_, count) => `${count} 个持仓`],
@@ -3160,7 +3200,20 @@
         ["Data coverage", data.coverage.intraday_sessions, `${data.coverage.option_chain_snapshots} option snapshots`]
       ].map(([label, value, detail]) => `<div class="status-box"><span class="micro-label">${safe(t(label))}</span><strong>${safe(value)}</strong><p>${safe(t(detail))}</p></div>`).join("");
       $("validationGates").innerHTML = data.readiness_gates.map(item => `<div class="compact-row"><div><strong>${safe(t(item.label))}</strong><p>${safe(item.value)} / ${safe(item.required)}</p></div><div>${item.passed ? "Passed" : "Collecting"}</div><strong class="${item.passed ? "positive" : ""}">${item.passed ? "✓" : "…"}</strong></div>`).join("");
-      $("validationScope").textContent = `${campaign.instruction || ""} ${data.scope}`.trim();
+      const operations = data.operations || { automation: {}, blockers: [], warnings: [], instruction: "" };
+      const automation = operations.automation || {};
+      $("validationAutomation").innerHTML = [
+        ["Daily decisions", automation.daily_decisions],
+        ["Intraday collection", automation.intraday_collection],
+        ["Option collection", automation.option_collection],
+        ["Verified daily backup", automation.verified_daily_backup],
+        ["Daily and weekly reports", automation.daily_weekly_reports]
+      ].map(([label, enabled]) => `<div class="compact-row"><div><strong>${safe(t(label))}</strong><p>${enabled ? t("Running") : t("Blocked")}</p></div><strong class="${enabled ? "positive" : ""}">${enabled ? "✓" : "!"}</strong></div>`).join("");
+      const operationItems = [...(operations.blockers || []), ...(operations.warnings || [])];
+      $("validationBlockers").innerHTML = operationItems.length
+        ? operationItems.map(item => `<div class="compact-row"><div><strong>${safe(t(item.label))}</strong><p>${safe(t(item.detail))}</p></div><strong>${(operations.blockers || []).includes(item) ? "BLOCK" : "CHECK"}</strong></div>`).join("")
+        : `<div class="compact-row"><div><strong>${safe(t("Automation status"))}</strong><p>${safe(t("Enabled"))}</p></div><strong class="positive">✓</strong></div>`;
+      $("validationScope").textContent = `${operations.instruction || ""} ${campaign.instruction || ""} ${data.scope}`.trim();
       translateUI($("validationMetrics").parentElement);
     }
 
@@ -3493,9 +3546,31 @@
     }
 
     function renderNotificationRules(center) {
-      $("notificationRuleList").innerHTML = center.rules.length ? center.rules.map(item => `<div class="compact-row"><div><strong>${safe(t(item.kind.replaceAll("_", " ")))}</strong><p>${safe(item.symbol || t("All symbols"))} · ${safe(t(item.detail))}</p></div><div>${item.active ? t("ACTIVE") : t("Waiting")}</div><button class="account-chip" type="button" data-rule-delete="${safe(item.id)}">Remove</button></div>`).join("") : `<span class="empty">${t("No unified notification rules.")}</span>`;
+      const rules = center.rules || [];
+      const operations = center.operational_alerts || [];
+      $("notificationRuleList").innerHTML = [
+        ...operations.map(item => `<div class="compact-row"><div><strong>${safe(t(item.kind.replaceAll("_", " ")))}</strong><p>${safe(t(item.detail))}</p></div><div>${t("ACTIVE")}</div><strong>!</strong></div>`),
+        ...rules.map(item => `<div class="compact-row"><div><strong>${safe(t(item.kind.replaceAll("_", " ")))}</strong><p>${safe(item.symbol || t("All symbols"))} · ${safe(t(item.detail))}</p></div><div>${item.active ? t("ACTIVE") : t("Waiting")}</div><button class="account-chip" type="button" data-rule-delete="${safe(item.id)}">Remove</button></div>`)
+      ].join("") || `<span class="empty">${t("No unified notification rules.")}</span>`;
       $("notificationRuleScope").textContent = `${center.active_count} active. ${center.delivery} ${center.scope}`;
       translateUI($("notificationRuleList").parentElement);
+      notifyOperationalAlerts(center);
+    }
+
+    function notifyOperationalAlerts(center) {
+      if (!("Notification" in window) || Notification.permission !== "granted" || !currentUser) return;
+      const key = `investorlab_operations_seen_${currentUser.id}`;
+      const previous = JSON.parse(storageGet(key) || "{}");
+      const current = {};
+      for (const alert of center.operational_alerts || []) {
+        current[alert.id] = alert.detail;
+        if (previous[alert.id] !== alert.detail) {
+          new Notification(t(alert.kind.replaceAll("_", " ")), {
+            body: t(alert.detail), tag: alert.id
+          });
+        }
+      }
+      storageSet(key, JSON.stringify(current));
     }
 
     function drawOptionScenario(result) {
@@ -3858,6 +3933,36 @@
       if (!("Notification" in window)) { notify("This browser does not support notifications."); return; }
       const permission = await Notification.requestPermission();
       notify(permission === "granted" ? "Browser decision and SEC filing alerts enabled while this page is open." : "Browser notifications were not enabled.");
+    });
+
+    $("validationRunButton").addEventListener("click", async event => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      try {
+        const result = await request("/api/validation/run", { method: "POST", body: "{}" });
+        renderValidationDashboard(result.dashboard);
+        await loadCommandCenter();
+        notify(result.blocked.length
+          ? `${result.completed.length} validation components completed · ${result.blocked.length} blocked`
+          : "Validation cycle completed.");
+      } catch (error) { notify(error.message); }
+      finally { button.disabled = false; }
+    });
+
+    $("validationReportButton").addEventListener("click", async event => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      try {
+        const report = await request("/api/validation/report");
+        const url = URL.createObjectURL(new Blob([report.markdown], { type: "text/markdown;charset=utf-8" }));
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = report.filename;
+        link.click();
+        URL.revokeObjectURL(url);
+        notify("Validation report exported.");
+      } catch (error) { notify(error.message); }
+      finally { button.disabled = false; }
     });
 
     $("marketSetupForm").addEventListener("submit", async event => {

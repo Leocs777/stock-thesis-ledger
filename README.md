@@ -9,7 +9,7 @@ Paper-only execution boundary.
 
 [![CI](https://github.com/Leocs777/stock-thesis-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/Leocs777/stock-thesis-ledger/actions/workflows/ci.yml)
 [![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-22313f.svg)](LICENSE)
-[![Release: v0.1.0](https://img.shields.io/badge/release-v0.1.0-1d4ed8.svg)](#v010-scope)
+[![Release: v0.1.1](https://img.shields.io/badge/release-v0.1.1-1d4ed8.svg)](#v011-scope)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-0f766e.svg)](#quick-start)
 [![Paper only](https://img.shields.io/badge/brokerage-Paper_only-e85d2a.svg)](#safety-boundary)
 
@@ -40,15 +40,23 @@ evidence; the journal, worksheets, sync, and paper ledger remain local.
 [Run a Paper validation campaign](docs/paper-validation-protocol.md) ·
 [Understand the safety model](#safety-boundary)
 
-## v0.1.0 scope
+## v0.1.1 scope
 
-The first public release is a transparent local reference implementation:
+The public build is a transparent local reference implementation:
 deterministic decision-v4.1 scoring, versioned thesis history, portfolio/options/
 day-trade Paper workflows, and synchronized Web/iOS review. It is intended for
 inspection, reproducibility, and forward Paper validation, not for performance
 claims or unattended trading.
 
-The internal Web/iOS product name remains **Investor Lab** in v0.1.0. Existing
+Version 0.1.1 closes the validation operations loop: it exposes provider and
+schedule blockers, a five-symbol campaign pool, review backlog, recent failures,
+one-click validation cycles, and exportable Markdown reports on Web and iOS.
+The scheduler rotates cost-controlled option snapshots, creates missing daily
+and weekly reports, verifies daily backups, and records samples only when real
+provider evidence exists. Operational blockers can appear as local browser and
+iPhone notifications without an APNs worker.
+
+The internal Web/iOS product name remains **Investor Lab** in v0.1.1. Existing
 bundle identifiers, SQLite filenames, backup formats, environment variables,
 Keychain services, Xcode paths, and local migration identifiers retain that name
 for compatibility. Public repository and documentation branding is

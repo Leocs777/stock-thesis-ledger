@@ -42,6 +42,7 @@ OCC_OPTION_RE = re.compile(r"^([A-Z]{1,6})(\d{6})([CP])(\d{8})$")
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
 SCHEMA_VERSION = 16
+APP_VERSION = "0.1.1"
 DECISION_MODEL_VERSION = "decision-v4.1"
 STRATEGY_FREEZE_PROTOCOL = "full-context-v1"
 SESSION_DAYS = 30
@@ -56,6 +57,12 @@ ALPACA_KEY_ID_KEYCHAIN_SERVICE = "org.investorlab.alpaca-key-id"
 ALPACA_SECRET_KEYCHAIN_SERVICE = "org.investorlab.alpaca-secret-key"
 NEW_YORK = ZoneInfo("America/New_York")
 DB_MAINTENANCE_LOCK = threading.Lock()
+SCHEDULER_STATE: dict[str, Any] = {
+    "running": False,
+    "started_at": None,
+    "last_cycle_at": None,
+    "last_error": None,
+}
 
 
 class InputError(ValueError):
@@ -3201,15 +3208,21 @@ def system_health(path: Path, user_id: str) -> dict[str, Any]:
         if backups else None
     )
     stale_count = sum(bool(item["is_stale"]) for item in symbols)
+    alpha_key, alpha_source = _alpha_vantage_api_key()
+    alpaca_key, alpaca_secret, alpaca_source = _alpaca_credentials()
     checks = [
         {"key": "database", "status": "pass" if quick_check == "ok" else "fail", "detail": f"SQLite quick_check: {quick_check}."},
         {"key": "backup", "status": "pass" if backup_age_hours is not None and backup_age_hours <= 48 else "attention", "detail": f"Latest verified backup is {backup_age_hours} hours old." if backup_age_hours is not None else "No backup exists yet."},
         {"key": "market_cache", "status": "pass" if symbols and stale_count == 0 else "attention", "detail": f"{len(symbols)} symbols cached; {stale_count} stale."},
+        {"key": "daily_provider", "status": "pass" if alpha_key else "attention", "detail": f"Alpha Vantage configured from {alpha_source}." if alpha_key else "Alpha Vantage credentials are not configured."},
+        {"key": "intraday_provider", "status": "pass" if alpaca_key and alpaca_secret else "attention", "detail": f"Alpaca Paper/IEX configured from {alpaca_source}." if alpaca_key and alpaca_secret else "Alpaca Paper/IEX credentials are not configured."},
+        {"key": "scheduler", "status": "pass" if SCHEDULER_STATE["running"] else "attention", "detail": f"Scheduler last cycle: {SCHEDULER_STATE['last_cycle_at']}." if SCHEDULER_STATE["last_cycle_at"] else "Scheduler has not completed a cycle in this process."},
         {"key": "public_url", "status": "pass" if os.environ.get("INVESTORLAB_PUBLIC_URL", "").strip() else "attention", "detail": "Stable HTTPS URL configured." if os.environ.get("INVESTORLAB_PUBLIC_URL", "").strip() else "No public URL configured."},
         {"key": "paper_account", "status": "pass" if paper_snapshot else "attention", "detail": f"Latest read-only paper snapshot: {paper_snapshot['fetched_at']}." if paper_snapshot else "Paper account has not been synchronized."},
         {"key": "paper_order_routing", "status": "pass", "detail": "Alpaca Paper routing is enabled behind typed confirmation and local limits." if paper_control["enabled"] else "Alpaca Paper routing is safely locked."},
     ]
     return {
+        "app_version": APP_VERSION,
         "status": "healthy" if all(item["status"] == "pass" for item in checks) else "attention",
         "checked_at": now_iso(),
         "schema_version": SCHEMA_VERSION,
@@ -3228,12 +3241,17 @@ def system_health(path: Path, user_id: str) -> dict[str, Any]:
             "symbols": symbols,
         },
         "automation": {
-            "scheduler_running": True,
+            "scheduler_running": bool(SCHEDULER_STATE["running"]),
+            "scheduler_started_at": SCHEDULER_STATE["started_at"],
+            "scheduler_last_cycle_at": SCHEDULER_STATE["last_cycle_at"],
+            "scheduler_last_error": SCHEDULER_STATE["last_error"],
             "public_url": os.environ.get("INVESTORLAB_PUBLIC_URL", "").strip() or None,
             "adjusted_history_enabled": os.environ.get("INVESTORLAB_ADJUSTED_DAILY") == "1",
             "intraday_collection_enabled": os.environ.get("INVESTORLAB_INTRADAY_COLLECTION") == "1",
+            "option_collection_enabled": os.environ.get("INVESTORLAB_OPTION_COLLECTION", "1") == "1",
             "recent_runs": collection_runs,
             "scheduled_backup_enabled": True,
+            "scheduled_reports_enabled": True,
         },
         "checks": checks,
         "paper_account": dict(paper_snapshot) if paper_snapshot else None,
@@ -3246,7 +3264,7 @@ def system_health(path: Path, user_id: str) -> dict[str, Any]:
 
 
 def run_system_health_check(path: Path, user_id: str) -> dict[str, Any]:
-    run_id = _start_collection_run(path, user_id, "health_check", 5)
+    run_id = _start_collection_run(path, user_id, "health_check", 9)
     try:
         result = system_health(path, user_id)
         passed = sum(item["status"] == "pass" for item in result["checks"])
@@ -5094,10 +5112,23 @@ def notification_center(path: Path, user_id: str) -> dict[str, Any]:
     with open_db(path) as db:
         rows = db.execute("SELECT * FROM notification_rules WHERE user_id = ? ORDER BY updated_at DESC", (user_id,)).fetchall()
         decisions = {item["symbol"]: item for item in _decision_center_from_db(db, user_id)["latest"]}
+        decision_settings_row = _decision_settings_from_db(db, user_id)
         plan_center = _plan_review_center_from_db(db, user_id)
         sec = _sec_event_center_from_db(db, user_id)
         earnings = _earnings_calendar_for_user(db, user_id, _sec_cached(db, "earnings-calendar:3month"))
         screener = _watchlist_screener_from_db(db, user_id)
+        watchlist_count = int(db.execute(
+            "SELECT COUNT(*) FROM watchlist WHERE user_id = ?", (user_id,)
+        ).fetchone()[0])
+        failure_cutoff = (
+            datetime.now(timezone.utc) - timedelta(hours=48)
+        ).isoformat(timespec="seconds").replace("+00:00", "Z")
+        failed_runs = db.execute(
+            "SELECT job_type, status, error_text, started_at FROM data_collection_runs "
+            "WHERE user_id = ? AND started_at >= ? AND status IN ('failed', 'partial') "
+            "ORDER BY started_at DESC LIMIT 10",
+            (user_id, failure_cutoff),
+        ).fetchall()
     alerts = []
     serialized = []
     for row in rows:
@@ -5128,8 +5159,52 @@ def notification_center(path: Path, user_id: str) -> dict[str, Any]:
         serialized.append(item)
         if active and row["enabled"]:
             alerts.append(item)
+    operational_alerts = []
+
+    def operational(key: str, kind: str, detail: str) -> None:
+        operational_alerts.append({
+            "id": f"operation:{key}", "kind": kind, "symbol": None,
+            "config": {}, "enabled": True, "active": True,
+            "detail": detail, "updated_at": now_iso(), "operational": True,
+        })
+
+    alpha_key, _ = _alpha_vantage_api_key()
+    alpaca_key, alpaca_secret, _ = _alpaca_credentials()
+    if decision_settings_row["auto_refresh_enabled"] and not alpha_key:
+        operational(
+            "alpha-vantage", "data_source",
+            "Automatic daily decisions are blocked until an Alpha Vantage key is saved.",
+        )
+    if os.environ.get("INVESTORLAB_INTRADAY_COLLECTION") == "1" and not (alpaca_key and alpaca_secret):
+        operational(
+            "alpaca", "data_source",
+            "Intraday and option collection are paused until Alpaca Paper/IEX credentials are saved.",
+        )
+    if watchlist_count < 5:
+        operational(
+            "symbol-pool", "validation_gap",
+            f"Validation coverage has {watchlist_count} of 5 required symbols.",
+        )
+    if plan_center["awaiting_review"]:
+        operational(
+            "plan-review", "plan_review",
+            f"{plan_center['awaiting_review']} saved paper plan(s) await a followed or skipped review.",
+        )
+    failed_job_types: set[str] = set()
+    for run in failed_runs:
+        job_type = str(run["job_type"])
+        if job_type in failed_job_types:
+            continue
+        failed_job_types.add(job_type)
+        operational(
+            f"run-{job_type}", "collection_failure",
+            f"{job_type.replace('_', ' ')} was {run['status']} at {run['started_at']}: "
+            f"{run['error_text'] or 'some requested items did not complete'}",
+        )
+    alerts.extend(operational_alerts)
     return {
-        "rules": serialized, "active_alerts": alerts, "active_count": len(alerts),
+        "rules": serialized, "operational_alerts": operational_alerts,
+        "active_alerts": alerts, "active_count": len(alerts),
         "delivery": "Web notifications while open and iOS local notifications after sync.",
         "background_delivery": False,
         "scope": "Rules are evaluated against cached evidence. APNs remote delivery is not enabled in this local-first build.",
@@ -8479,6 +8554,125 @@ def _validation_strategy_context(run: dict[str, Any]) -> str:
     )
 
 
+def _validation_operations_snapshot(
+    path: Path, user_id: str, validation: dict[str, Any]
+) -> dict[str, Any]:
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(hours=48)
+    ).isoformat(timespec="seconds").replace("+00:00", "Z")
+    with open_db(path) as db:
+        settings = _decision_settings_from_db(db, user_id)
+        symbols = [
+            str(row["symbol"])
+            for row in db.execute(
+                "SELECT symbol FROM watchlist WHERE user_id = ? ORDER BY created_at, symbol",
+                (user_id,),
+            ).fetchall()
+        ]
+        plan_center = _plan_review_center_from_db(db, user_id)
+        runs = _collection_runs_from_db(db, user_id, 30)
+        reports = [
+            dict(row)
+            for row in db.execute(
+                "SELECT period, report_date, created_at FROM research_reports "
+                "WHERE user_id = ? ORDER BY report_date DESC, created_at DESC LIMIT 8",
+                (user_id,),
+            ).fetchall()
+        ]
+    alpha_key, alpha_source = _alpha_vantage_api_key()
+    alpaca_key, alpaca_secret, alpaca_source = _alpaca_credentials()
+    alpha_ready = bool(alpha_key)
+    alpaca_ready = bool(alpaca_key and alpaca_secret)
+    recent_failures = []
+    for run in runs:
+        if str(run.get("started_at") or "") < cutoff or run.get("status") not in {"failed", "partial"}:
+            continue
+        errors = run.get("result", {}).get("errors") if isinstance(run.get("result"), dict) else None
+        recent_failures.append({
+            "job_type": run["job_type"],
+            "status": run["status"],
+            "error": run.get("error_text") or (json.dumps(errors)[:500] if errors else "Some requested items did not complete."),
+            "started_at": run["started_at"],
+        })
+    blockers = []
+    warnings = []
+    if not alpha_ready:
+        blockers.append({
+            "key": "alpha_vantage",
+            "label": "Daily market provider required",
+            "detail": "Save an Alpha Vantage key in Settings before automatic daily decisions can run.",
+        })
+    if len(symbols) < 5:
+        blockers.append({
+            "key": "symbol_pool",
+            "label": "Validation pool needs five symbols",
+            "detail": f"{len(symbols)} configured; add {5 - len(symbols)} more liquid symbols.",
+        })
+    if not settings["auto_refresh_enabled"]:
+        blockers.append({
+            "key": "daily_schedule",
+            "label": "Daily decision schedule is off",
+            "detail": "Enable the 24-hour decision refresh schedule to accumulate frozen evidence.",
+        })
+    if not alpaca_ready:
+        warnings.append({
+            "key": "alpaca",
+            "label": "Intraday and option collection paused",
+            "detail": "Save Alpaca Paper/IEX credentials to collect minute bars and indicative option snapshots.",
+        })
+    if plan_center["awaiting_review"]:
+        warnings.append({
+            "key": "plan_reviews",
+            "label": "Paper plans await review",
+            "detail": f"{plan_center['awaiting_review']} saved plan(s) have no followed/skipped decision.",
+        })
+    if recent_failures:
+        warnings.append({
+            "key": "collection_failures",
+            "label": "Recent collection needs attention",
+            "detail": f"{len(recent_failures)} failed or partial run(s) in the last 48 hours.",
+        })
+    latest_jobs: dict[str, dict[str, Any]] = {}
+    for run in runs:
+        latest_jobs.setdefault(str(run["job_type"]), run)
+    return {
+        "status": "blocked" if blockers else "attention" if warnings else "ready",
+        "app_version": APP_VERSION,
+        "pool": {"symbols": symbols, "count": len(symbols), "required": 5},
+        "providers": {
+            "daily": {"configured": alpha_ready, "source": alpha_source},
+            "intraday_options": {"configured": alpaca_ready, "source": alpaca_source},
+        },
+        "automation": {
+            "scheduler_running": bool(SCHEDULER_STATE["running"]),
+            "last_cycle_at": SCHEDULER_STATE["last_cycle_at"],
+            "daily_decisions": bool(settings["auto_refresh_enabled"] and alpha_ready),
+            "refresh_interval_hours": settings["refresh_interval_hours"],
+            "last_decision_refresh_at": settings["last_refresh_at"],
+            "intraday_collection": bool(
+                os.environ.get("INVESTORLAB_INTRADAY_COLLECTION") == "1" and alpaca_ready
+            ),
+            "option_collection": bool(
+                os.environ.get("INVESTORLAB_OPTION_COLLECTION", "1") == "1" and alpaca_ready
+            ),
+            "verified_daily_backup": True,
+            "daily_weekly_reports": True,
+            "local_review_reminders": True,
+        },
+        "review_queue": {
+            "awaiting": plan_center["awaiting_review"],
+            "active_followed": plan_center["active_followed"],
+        },
+        "blockers": blockers,
+        "warnings": warnings,
+        "recent_failures": recent_failures[:10],
+        "latest_jobs": latest_jobs,
+        "reports": reports,
+        "capital_review_ready": bool(validation.get("ready_for_capital_review")),
+        "instruction": "Clear blocking setup items, keep one strategy context frozen, and let the local scheduler collect evidence. Missing provider data never counts as a completed sample.",
+    }
+
+
 def validation_dashboard(path: Path, user_id: str, window_days: int = 60) -> dict[str, Any]:
     window_days = max(30, min(window_days, 60))
     cutoff_date = (datetime.now(timezone.utc).date() - timedelta(days=window_days)).isoformat()
@@ -8594,7 +8788,7 @@ def validation_dashboard(path: Path, user_id: str, window_days: int = 60) -> dic
         campaign_status = "review_window"
     else:
         campaign_status = "extended_collection"
-    return {
+    result = {
         "window_days": window_days,
         "cutoff_date": effective_cutoff_date,
         "generated_at": now_iso(),
@@ -8639,6 +8833,56 @@ def validation_dashboard(path: Path, user_id: str, window_days: int = 60) -> dic
             "decision_symbols": len(symbols),
         },
         "scope": "A local paper-validation gate. It measures stored decisions, later bars, and self-recorded plan reviews; it does not predict future returns or route orders.",
+    }
+    result["operations"] = _validation_operations_snapshot(path, user_id, result)
+    return result
+
+
+def validation_report(path: Path, user_id: str) -> dict[str, Any]:
+    dashboard = validation_dashboard(path, user_id, 60)
+    campaign = dashboard["campaign"]
+    operations = dashboard["operations"]
+    lines = [
+        "# Stock Thesis Ledger validation report",
+        "",
+        f"Generated: {dashboard['generated_at']}",
+        f"Campaign: day {campaign['day_number']} of {campaign['maximum_days']}",
+        f"Model: {campaign['model_version']} / {STRATEGY_FREEZE_PROTOCOL}",
+        f"Capital review ready: {'yes' if dashboard['ready_for_capital_review'] else 'no'}",
+        "",
+        "## Readiness gates",
+        "",
+    ]
+    for gate in dashboard["readiness_gates"]:
+        marker = "x" if gate["passed"] else " "
+        lines.append(
+            f"- [{marker}] {gate['label']}: {gate['value']} / {gate['required']}"
+        )
+    lines.extend(["", "## Operations", ""])
+    lines.append(f"- Pool: {', '.join(operations['pool']['symbols']) or 'none'}")
+    lines.append(
+        f"- Daily decisions: {'running' if operations['automation']['daily_decisions'] else 'blocked'}"
+    )
+    lines.append(
+        f"- Intraday collection: {'running' if operations['automation']['intraday_collection'] else 'blocked'}"
+    )
+    lines.append(
+        f"- Option collection: {'running' if operations['automation']['option_collection'] else 'blocked'}"
+    )
+    for item in operations["blockers"] + operations["warnings"]:
+        lines.append(f"- {item['label']}: {item['detail']}")
+    lines.extend([
+        "",
+        "## Scope",
+        "",
+        dashboard["scope"],
+        "",
+    ])
+    return {
+        "filename": f"stock-thesis-ledger-validation-{date.today().isoformat()}.md",
+        "generated_at": dashboard["generated_at"],
+        "markdown": "\n".join(lines),
+        "dashboard": dashboard,
     }
 
 
@@ -9480,6 +9724,9 @@ def run_scheduled_decision_refreshes(path: Path) -> list[dict[str, Any]]:
 def run_scheduled_intraday_collection(path: Path) -> list[dict[str, Any]]:
     if os.environ.get("INVESTORLAB_INTRADAY_COLLECTION") != "1":
         return []
+    key_id, secret, _ = _alpaca_credentials()
+    if not key_id or not secret:
+        return []
     now_ny = datetime.now(timezone.utc).astimezone(NEW_YORK)
     if now_ny.weekday() >= 5 or not (4, 0) <= (now_ny.hour, now_ny.minute) < (16, 5):
         return []
@@ -9508,7 +9755,13 @@ def run_scheduled_intraday_collection(path: Path) -> list[dict[str, Any]]:
         for symbol in symbols:
             try:
                 plan = realtime_day_trade_plan(path, symbol, user_id)
-                completed.append({"symbol": symbol, "available": bool(plan.get("available"))})
+                if plan.get("available"):
+                    completed.append({"symbol": symbol, "available": True})
+                else:
+                    errors.append({
+                        "symbol": symbol,
+                        "error": str(plan.get("reason") or "No intraday evidence was returned."),
+                    })
             except (ApiError, InputError) as error:
                 errors.append({"symbol": symbol, "error": str(error)})
         result = {"symbols": completed, "errors": errors}
@@ -9516,6 +9769,160 @@ def run_scheduled_intraday_collection(path: Path) -> list[dict[str, Any]]:
         _finish_collection_run(path, run_id, status, len(completed), result, errors[0]["error"] if errors and not completed else "")
         results.append({"user_id": user_id, **result})
     return results
+
+
+def run_scheduled_option_collection(path: Path) -> list[dict[str, Any]]:
+    if os.environ.get("INVESTORLAB_OPTION_COLLECTION", "1") != "1":
+        return []
+    key_id, secret, _ = _alpaca_credentials()
+    if not key_id or not secret:
+        return []
+    now_ny = datetime.now(timezone.utc).astimezone(NEW_YORK)
+    if now_ny.weekday() >= 5 or not (9, 35) <= (now_ny.hour, now_ny.minute) < (16, 5):
+        return []
+    local_midnight = now_ny.replace(hour=0, minute=0, second=0, microsecond=0)
+    cutoff = local_midnight.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    with open_db(path) as db:
+        users = db.execute("SELECT id FROM users ORDER BY created_at").fetchall()
+    results = []
+    for user in users:
+        user_id = str(user["id"])
+        with open_db(path) as db:
+            symbols = [
+                str(row["symbol"])
+                for row in db.execute(
+                    "SELECT symbol FROM watchlist WHERE user_id = ? "
+                    "AND symbol NOT IN (SELECT symbol FROM option_chain_snapshots "
+                    "WHERE user_id = ? AND fetched_at >= ?) ORDER BY created_at, symbol LIMIT 1",
+                    (user_id, user_id, cutoff),
+                ).fetchall()
+            ]
+        if not symbols:
+            continue
+        symbol = symbols[0]
+        run_id = _start_collection_run(path, user_id, "option_chain_scan", 1)
+        try:
+            chain = option_chain(path, user_id, symbol, _option_filters({}))
+            available = bool(chain.get("available"))
+            result = {
+                "symbol": symbol, "available": available,
+                "contracts": int((chain.get("summary") or {}).get("contracts") or 0),
+                "reason": chain.get("reason"),
+            }
+            _finish_collection_run(
+                path, run_id, "completed" if available else "partial",
+                1 if available else 0, result,
+                "" if available else str(chain.get("reason") or "No option contracts were returned."),
+            )
+            results.append(result)
+        except (ApiError, InputError) as error:
+            _finish_collection_run(path, run_id, "failed", 0, error=str(error))
+            results.append({"symbol": symbol, "available": False, "error": str(error)})
+    return results
+
+
+def run_scheduled_reports(path: Path) -> list[dict[str, Any]]:
+    today = date.today()
+    report_dates = {
+        "daily": today.isoformat(),
+        "weekly": (today - timedelta(days=today.weekday())).isoformat(),
+    }
+    with open_db(path) as db:
+        users = db.execute("SELECT id FROM users ORDER BY created_at").fetchall()
+    results = []
+    for user in users:
+        user_id = str(user["id"])
+        with open_db(path) as db:
+            existing = {
+                (str(row["period"]), str(row["report_date"]))
+                for row in db.execute(
+                    "SELECT period, report_date FROM research_reports WHERE user_id = ?",
+                    (user_id,),
+                ).fetchall()
+            }
+        missing = [
+            period for period, report_date in report_dates.items()
+            if (period, report_date) not in existing
+        ]
+        if not missing:
+            continue
+        run_id = _start_collection_run(path, user_id, "research_report", len(missing))
+        generated = []
+        try:
+            for period in missing:
+                report = generate_research_report(path, user_id, period)
+                generated.append({
+                    "period": period, "report_date": report["report_date"], "id": report["id"]
+                })
+            _finish_collection_run(
+                path, run_id, "completed", len(generated), {"reports": generated}
+            )
+            results.extend(generated)
+        except Exception as error:
+            _finish_collection_run(
+                path, run_id, "partial" if generated else "failed", len(generated),
+                {"reports": generated}, str(error),
+            )
+            raise
+    return results
+
+
+def run_validation_cycle(path: Path, user_id: str) -> dict[str, Any]:
+    run_id = _start_collection_run(path, user_id, "validation_cycle", 6)
+    completed = []
+    blocked = []
+    try:
+        alpha_key, _ = _alpha_vantage_api_key()
+        if alpha_key:
+            result = refresh_watchlist_decisions(path, user_id)
+            completed.append({
+                "component": "daily_decisions", "completed": result["completed"],
+                "failed": result["failed"],
+            })
+        else:
+            blocked.append({
+                "component": "daily_decisions",
+                "error": "Save an Alpha Vantage key before running the daily decision cycle.",
+            })
+        alpaca_key, alpaca_secret, _ = _alpaca_credentials()
+        if alpaca_key and alpaca_secret:
+            intraday = run_scheduled_intraday_collection(path)
+            options = run_scheduled_option_collection(path)
+            completed.append({"component": "intraday", "runs": len(intraday)})
+            completed.append({"component": "options", "runs": len(options)})
+        else:
+            blocked.append({
+                "component": "intraday_options",
+                "error": "Save Alpaca Paper/IEX credentials before collecting intraday and option evidence.",
+            })
+        backup = run_scheduled_backup(path)
+        completed.append({
+            "component": "backup",
+            "result": backup["filename"] if backup else "already completed today",
+        })
+        daily_report = generate_research_report(path, user_id, "daily")
+        weekly_report = generate_research_report(path, user_id, "weekly")
+        completed.append({
+            "component": "reports",
+            "daily": daily_report["report_date"], "weekly": weekly_report["report_date"],
+        })
+        health = run_system_health_check(path, user_id)
+        completed.append({"component": "health", "status": health["status"]})
+        dashboard = validation_dashboard(path, user_id, 60)
+        status = "completed" if not blocked else "partial"
+        result = {
+            "status": status, "completed": completed, "blocked": blocked,
+            "dashboard": dashboard, "notifications": notification_center(path, user_id),
+            "completed_at": now_iso(),
+        }
+        _finish_collection_run(path, run_id, status, len(completed), result)
+        return result
+    except Exception as error:
+        _finish_collection_run(
+            path, run_id, "partial" if completed else "failed", len(completed),
+            {"completed": completed, "blocked": blocked}, str(error),
+        )
+        raise
 
 
 def run_scheduled_health_checks(path: Path) -> list[dict[str, Any]]:
@@ -9537,13 +9944,35 @@ def run_scheduled_health_checks(path: Path) -> list[dict[str, Any]]:
 
 
 def _decision_scheduler_loop(path: Path, stop: threading.Event) -> None:
-    while not stop.wait(60):
-        run_scheduled_decision_refreshes(path)
-        run_scheduled_intraday_collection(path)
-        run_scheduled_backup(path)
-        run_scheduled_health_checks(path)
-        if stop.wait(840):
+    SCHEDULER_STATE.update({
+        "running": True, "started_at": now_iso(), "last_cycle_at": None, "last_error": None,
+    })
+    tasks = (
+        run_scheduled_decision_refreshes,
+        run_scheduled_intraday_collection,
+        run_scheduled_option_collection,
+        run_scheduled_backup,
+        run_scheduled_reports,
+        run_scheduled_health_checks,
+    )
+    try:
+        if stop.wait(5):
             return
+        while not stop.is_set():
+            errors = []
+            for task in tasks:
+                try:
+                    task(path)
+                except Exception as error:
+                    message = f"{task.__name__}: {error}"
+                    errors.append(message)
+                    print(f"Investor Lab scheduler error: {message}", file=sys.stderr, flush=True)
+            SCHEDULER_STATE["last_cycle_at"] = now_iso()
+            SCHEDULER_STATE["last_error"] = "; ".join(errors) or None
+            if stop.wait(900):
+                return
+    finally:
+        SCHEDULER_STATE["running"] = False
 
 
 def market_research(path: Path, raw_symbol: Any) -> dict[str, Any]:
@@ -9789,6 +10218,7 @@ def make_handler(db_path: Path, web_root: Path) -> type[BaseHTTPRequestHandler]:
                         {
                             "status": "ok",
                             "mode": "local",
+                            "app_version": APP_VERSION,
                             "schema_version": SCHEMA_VERSION,
                             "auth_required": True,
                         },
@@ -9885,6 +10315,8 @@ def make_handler(db_path: Path, web_root: Path) -> type[BaseHTTPRequestHandler]:
                         except ValueError:
                             raise InputError("Validation window must be an integer.") from None
                         self._send_json(200, validation_dashboard(db_path, user_id, window_days))
+                    elif route == "/api/validation/report":
+                        self._send_json(200, validation_report(db_path, user_id))
                     elif route == "/api/snapshot":
                         self._send_json(200, snapshot(db_path, user_id))
                     elif route == "/api/investor-profile":
@@ -10046,6 +10478,8 @@ def make_handler(db_path: Path, web_root: Path) -> type[BaseHTTPRequestHandler]:
                         self._send_json(200, restore_database_backup(db_path, user_id, payload))
                     elif route == "/api/system/health-check":
                         self._send_json(200, run_system_health_check(db_path, user_id))
+                    elif route == "/api/validation/run":
+                        self._send_json(200, run_validation_cycle(db_path, user_id))
                     elif route == "/api/alpaca/paper-account/sync":
                         self._send_json(200, sync_paper_account(db_path, user_id))
                     elif route == "/api/alpaca/paper-orders":

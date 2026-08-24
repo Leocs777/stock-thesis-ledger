@@ -46,3 +46,8 @@ storage when the configured Alpha Vantage plan permits that endpoint. Raw daily
 prices remain the cost-controlled default. Intraday background collection is
 limited by `INVESTORLAB_INTRADAY_SYMBOL_LIMIT` and runs only on weekdays from
 04:00 through 16:05 America/New_York.
+
+`INVESTORLAB_OPTION_COLLECTION=1` enables the cost-controlled option snapshot
+rotation. It loads at most one missing watchlist symbol per 15-minute scheduler
+cycle from 09:35 through 16:05 America/New_York. Daily and weekly local reports
+and one verified SQLite backup per UTC day are enabled without a paid worker.
