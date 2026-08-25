@@ -7,7 +7,7 @@ Web application and authenticated JSON API, schedules bounded local collection,
 and reads and writes a single SQLite database. The native iOS client uses the
 same API and sync cursor.
 
-The v0.1.0 runtime UI and compatibility identifiers still use `Investor Lab`;
+The runtime UI and compatibility identifiers still use `Investor Lab`;
 the public project and repository use `Stock Thesis Ledger`.
 
 ## Component map
@@ -49,9 +49,11 @@ health, login/registration, and static design assets. Authenticated browser
 mutations require a CSRF token. iOS uses a bearer session bound to a registered
 device.
 
-The first local account claims any supported legacy local records. Registration
-then closes by default. Sessions are stored as SHA-256 token hashes and can be
-revoked per device.
+The first local account claims any supported legacy local records and becomes
+the vault owner. Registration then closes by default. Sessions are stored as
+SHA-256 token hashes, bound to their Web or iOS transport and device, and can be
+revoked per device or globally. Shared provider, broker, backup, restore, and
+maintenance mutations are owner-only.
 
 ### Domain and analysis
 

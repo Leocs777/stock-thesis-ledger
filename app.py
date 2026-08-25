@@ -19,7 +19,7 @@ import subprocess
 import sys
 import threading
 import xml.etree.ElementTree as ET
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from html.parser import HTMLParser
 from http.cookies import CookieError, SimpleCookie
@@ -31,6 +31,12 @@ from urllib.parse import parse_qs, unquote, urlencode, urlparse
 from urllib.request import Request, urlopen
 from uuid import uuid4
 from zoneinfo import ZoneInfo
+
+from investor_lab.portfolio_math import (
+    asset_multiplier as _asset_multiplier,
+    calculate_positions,
+    position_value_micros as _position_value_micros,
+)
 
 
 def _configure_tls_ca_environment(
@@ -55,20 +61,23 @@ SYMBOL_RE = re.compile(r"^[A-Z][A-Z0-9.-]{0,31}$")
 OCC_OPTION_RE = re.compile(r"^([A-Z]{1,6})(\d{6})([CP])(\d{8})$")
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
-SCHEMA_VERSION = 16
-APP_VERSION = "0.1.4"
+SCHEMA_VERSION = 17
+APP_VERSION = "0.1.6"
 DECISION_MODEL_VERSION = "decision-v4.1"
 STRATEGY_FREEZE_PROTOCOL = "full-context-v1"
+PORTFOLIO_CALCULATION_VERSION = "portfolio-v2-option-contract-multiplier"
 SESSION_DAYS = 30
 LOGIN_WINDOW_MINUTES = 15
 LOGIN_ATTEMPT_LIMIT = 8
+PASSWORD_HASH_SEMAPHORE = threading.BoundedSemaphore(4)
 STATIC_ASSETS = {
     "/assets/investor-lab-ui.css": ("investor-lab-ui.css", "text/css; charset=utf-8"),
     "/assets/investor-lab-ui.js": ("investor-lab-ui.js", "text/javascript; charset=utf-8"),
+    "/assets/investor-lab-logo.png": ("investor-lab-logo.png", "image/png"),
 }
-ALPHA_VANTAGE_KEYCHAIN_SERVICE = "org.investorlab.alpha-vantage"
-ALPACA_KEY_ID_KEYCHAIN_SERVICE = "org.investorlab.alpaca-key-id"
-ALPACA_SECRET_KEYCHAIN_SERVICE = "org.investorlab.alpaca-secret-key"
+ALPHA_VANTAGE_KEYCHAIN_SERVICE = "com.leochen.investorlab.alpha-vantage"
+ALPACA_KEY_ID_KEYCHAIN_SERVICE = "com.leochen.investorlab.alpaca-key-id"
+ALPACA_SECRET_KEYCHAIN_SERVICE = "com.leochen.investorlab.alpaca-secret-key"
 NEW_YORK = ZoneInfo("America/New_York")
 DB_MAINTENANCE_LOCK = threading.Lock()
 SCHEDULER_STATE: dict[str, Any] = {
@@ -96,6 +105,16 @@ def now_iso() -> str:
 def future_iso(days: int) -> str:
     value = datetime.now(timezone.utc) + timedelta(days=days)
     return value.isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _new_york_date(value: str) -> date:
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        raise InputError("Stored timestamp is not valid ISO-8601.") from None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(NEW_YORK).date()
 
 
 def normalize_symbol(value: Any) -> str:
@@ -259,6 +278,9 @@ def init_db(path: Path) -> None:
         if version == 15:
             _migrate_v15_to_v16(db)
             version = 16
+        if version == 16:
+            _migrate_v16_to_v17(db)
+            version = 17
         if version != SCHEMA_VERSION:
             raise RuntimeError(f"Unsupported database schema version {version}.")
 
@@ -885,8 +907,36 @@ def _migrate_v15_to_v16(db: sqlite3.Connection) -> None:
     )
 
 
+def _migrate_v16_to_v17(db: sqlite3.Connection) -> None:
+    db.executescript(
+        """
+        BEGIN IMMEDIATE;
+        ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'member'
+            CHECK (role IN ('owner', 'member'));
+        UPDATE users SET role = 'owner' WHERE id = (
+            SELECT id FROM users ORDER BY created_at, id LIMIT 1
+        );
+        ALTER TABLE sessions ADD COLUMN client_type TEXT NOT NULL DEFAULT 'web'
+            CHECK (client_type IN ('web', 'ios'));
+        UPDATE sessions SET client_type = COALESCE(
+            (SELECT platform FROM devices WHERE devices.id = sessions.device_id),
+            'web'
+        );
+        DELETE FROM sessions WHERE device_id IS NULL;
+        CREATE INDEX sessions_client_type ON sessions(user_id, client_type, expires_at);
+        INSERT INTO schema_migrations(version, name, applied_at)
+            VALUES (17, 'session-transport-owner-and-device-binding', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'));
+        PRAGMA user_version = 17;
+        COMMIT;
+        """
+    )
+
+
 def _hash_password(password: str, salt: bytes) -> bytes:
-    return hashlib.scrypt(password.encode("utf-8"), salt=salt, n=2**14, r=8, p=1, dklen=32)
+    with PASSWORD_HASH_SEMAPHORE:
+        return hashlib.scrypt(
+            password.encode("utf-8"), salt=salt, n=2**14, r=8, p=1, dklen=32
+        )
 
 
 def _token_hash(token: str) -> str:
@@ -894,7 +944,10 @@ def _token_hash(token: str) -> str:
 
 
 def _serialize_user(row: sqlite3.Row) -> dict[str, str]:
-    return {"id": row["id"], "email": row["email"], "display_name": row["display_name"]}
+    return {
+        "id": row["id"], "email": row["email"], "display_name": row["display_name"],
+        "role": row["role"],
+    }
 
 
 def _append_sync_event(
@@ -921,23 +974,39 @@ def latest_revision(db: sqlite3.Connection, user_id: str) -> int:
     return int(row["revision"])
 
 
+def _session_device(payload: dict[str, Any], client_type: str) -> tuple[str, str]:
+    device_id = str(payload.get("device_id") or f"{client_type}-{uuid4()}").strip()
+    device_name = str(payload.get("device_name") or f"{client_type.upper()} device").strip()
+    if not DEVICE_ID_RE.fullmatch(device_id):
+        raise InputError("Device ID must be 8-128 safe characters.")
+    if not 1 <= len(device_name) <= 80:
+        raise InputError("Device name must be 1-80 characters.")
+    return device_id, device_name
+
+
 def register_user(path: Path, payload: dict[str, Any], allow_additional: bool = False) -> tuple[dict[str, str], dict[str, str]]:
     email = normalize_email(payload.get("email"))
     password = validate_password(payload.get("password"))
     display_name = validate_display_name(payload.get("display_name"))
+    client_type = str(payload.get("client") or "web").lower()
+    if client_type not in {"web", "ios"}:
+        raise InputError("Client must be web or ios.")
+    device_id, device_name = _session_device(payload, client_type)
     user_id = str(uuid4())
     salt = secrets.token_bytes(16)
+    password_hash = _hash_password(password, salt)
     created_at = now_iso()
     with open_db(path) as db:
         db.execute("BEGIN IMMEDIATE")
         count = int(db.execute("SELECT COUNT(*) FROM users").fetchone()[0])
         if count and not allow_additional:
             raise ApiError(403, "Additional account registration is disabled on this local server.")
+        role = "owner" if count == 0 else "member"
         try:
             db.execute(
-                "INSERT INTO users(id, email, display_name, password_salt, password_hash, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (user_id, email, display_name, salt, _hash_password(password, salt), created_at),
+                "INSERT INTO users(id, email, display_name, password_salt, password_hash, created_at, role) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (user_id, email, display_name, salt, password_hash, created_at, role),
             )
         except sqlite3.IntegrityError:
             raise ApiError(409, "An account with that email already exists.") from None
@@ -969,67 +1038,124 @@ def register_user(path: Path, payload: dict[str, Any], allow_additional: bool = 
             "bootstrap",
             {"claimed_watchlist": claimed_watchlist, "claimed_trades": claimed_trades},
         )
-    user = {"id": user_id, "email": email, "display_name": display_name}
-    return user, create_session(path, user_id)
+    user = {"id": user_id, "email": email, "display_name": display_name, "role": role}
+    return user, create_session(path, user_id, client_type, device_id, device_name)
 
 
 def _login_rate_key(address: str, email: str) -> str:
     return hashlib.sha256(f"{address}|{email}".encode("utf-8")).hexdigest()
 
 
+def _login_rate_keys(address: str, email: str) -> tuple[str, str, str]:
+    return (
+        hashlib.sha256(f"address:{address}".encode("utf-8")).hexdigest(),
+        hashlib.sha256(f"email:{email}".encode("utf-8")).hexdigest(),
+        _login_rate_key(address, email),
+    )
+
+
 def login_user(path: Path, payload: dict[str, Any], address: str) -> tuple[dict[str, str], dict[str, str]]:
     email = normalize_email(payload.get("email"))
     password = str(payload.get("password") or "")
-    rate_key = _login_rate_key(address, email)
+    client_type = str(payload.get("client") or "web").lower()
+    if client_type not in {"web", "ios"}:
+        raise InputError("Client must be web or ios.")
+    device_id, device_name = _session_device(payload, client_type)
+    address_key, email_key, pair_key = _login_rate_keys(address, email)
+    rate_keys = (address_key, email_key, pair_key)
     cutoff = (datetime.now(timezone.utc) - timedelta(minutes=LOGIN_WINDOW_MINUTES)).isoformat(
         timespec="seconds"
     ).replace("+00:00", "Z")
     with open_db(path) as db:
         db.execute("DELETE FROM failed_logins WHERE attempted_at < ?", (cutoff,))
-        attempts = int(
-            db.execute("SELECT COUNT(*) FROM failed_logins WHERE key_hash = ?", (rate_key,)).fetchone()[0]
-        )
-        if attempts >= LOGIN_ATTEMPT_LIMIT:
+        counts = {
+            str(row["key_hash"]): int(row["attempts"])
+            for row in db.execute(
+                "SELECT key_hash, COUNT(*) AS attempts FROM failed_logins "
+                "WHERE key_hash IN (?, ?, ?) GROUP BY key_hash",
+                rate_keys,
+            ).fetchall()
+        }
+        if any(counts.get(key, 0) >= LOGIN_ATTEMPT_LIMIT for key in rate_keys):
             raise ApiError(429, "Too many login attempts. Try again later.")
         row = db.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
-        salt = bytes(row["password_salt"]) if row else b"InvestorLabAuth!"
-        candidate_hash = _hash_password(password, salt)
-        valid = bool(row) and hmac.compare_digest(candidate_hash, bytes(row["password_hash"]))
-        if not valid:
-            db.execute(
+    salt = bytes(row["password_salt"]) if row else b"InvestorLabAuth!"
+    candidate_hash = _hash_password(password, salt)
+    valid = bool(row) and hmac.compare_digest(candidate_hash, bytes(row["password_hash"]))
+    if not valid:
+        attempted_at = now_iso()
+        with open_db(path) as db:
+            db.executemany(
                 "INSERT INTO failed_logins(key_hash, attempted_at) VALUES (?, ?)",
-                (rate_key, now_iso()),
+                [(key, attempted_at) for key in rate_keys],
             )
-            db.commit()
-            raise ApiError(401, "Invalid email or password.")
-        db.execute("DELETE FROM failed_logins WHERE key_hash = ?", (rate_key,))
-        user = _serialize_user(row)
-    return user, create_session(path, user["id"])
+        raise ApiError(401, "Invalid email or password.")
+    assert row is not None
+    user = _serialize_user(row)
+    with open_db(path) as db:
+        db.execute(
+            "DELETE FROM failed_logins WHERE key_hash IN (?, ?)",
+            (email_key, pair_key),
+        )
+    return user, create_session(path, user["id"], client_type, device_id, device_name)
 
 
-def create_session(path: Path, user_id: str) -> dict[str, str]:
+def create_session(
+    path: Path,
+    user_id: str,
+    client_type: str = "web",
+    device_id: str | None = None,
+    device_name: str | None = None,
+) -> dict[str, str]:
+    if client_type not in {"web", "ios"}:
+        raise InputError("Client must be web or ios.")
+    if device_id is None:
+        device_id = f"{client_type}-{uuid4()}"
+    if not DEVICE_ID_RE.fullmatch(device_id):
+        raise InputError("Device ID must be 8-128 safe characters.")
+    device_name = str(device_name or f"{client_type.upper()} device").strip()
+    if not 1 <= len(device_name) <= 80:
+        raise InputError("Device name must be 1-80 characters.")
     token = secrets.token_urlsafe(32)
     csrf_token = secrets.token_urlsafe(24)
     created_at = now_iso()
     expires_at = future_iso(SESSION_DAYS)
     with open_db(path) as db:
+        db.execute("BEGIN IMMEDIATE")
         db.execute("DELETE FROM sessions WHERE expires_at <= ?", (created_at,))
         db.execute(
-            "INSERT INTO sessions(token_hash, user_id, csrf_token, created_at, expires_at, last_seen_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (_token_hash(token), user_id, csrf_token, created_at, expires_at, created_at),
+            "INSERT INTO devices(id, user_id, name, platform, created_at, last_seen_at) "
+            "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET "
+            "name = excluded.name, last_seen_at = excluded.last_seen_at "
+            "WHERE devices.user_id = excluded.user_id AND devices.platform = excluded.platform",
+            (device_id, user_id, device_name, client_type, created_at, created_at),
+        )
+        device = db.execute(
+            "SELECT id FROM devices WHERE id = ? AND user_id = ? AND platform = ?",
+            (device_id, user_id, client_type),
+        ).fetchone()
+        if not device:
+            raise ApiError(409, "That device ID belongs to another account or client type.")
+        db.execute(
+            "INSERT INTO sessions(token_hash, user_id, csrf_token, created_at, expires_at, "
+            "last_seen_at, device_id, client_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                _token_hash(token), user_id, csrf_token, created_at, expires_at,
+                created_at, device_id, client_type,
+            ),
         )
     return {"access_token": token, "csrf_token": csrf_token, "expires_at": expires_at}
 
 
-def authenticate_session(path: Path, token: str) -> tuple[dict[str, str], str, str]:
+def authenticate_session(path: Path, token: str) -> tuple[dict[str, str], str, str, str]:
     if not token or len(token) > 256:
         raise ApiError(401, "Authentication required.")
     digest = _token_hash(token)
     current = now_iso()
     with open_db(path) as db:
         row = db.execute(
-            "SELECT users.id, users.email, users.display_name, sessions.csrf_token "
+            "SELECT users.id, users.email, users.display_name, users.role, "
+            "sessions.csrf_token, sessions.client_type "
             "FROM sessions JOIN users ON users.id = sessions.user_id "
             "WHERE sessions.token_hash = ? AND sessions.expires_at > ?",
             (digest, current),
@@ -1037,12 +1163,59 @@ def authenticate_session(path: Path, token: str) -> tuple[dict[str, str], str, s
         if not row:
             raise ApiError(401, "Authentication required.")
         db.execute("UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?", (current, digest))
-    return _serialize_user(row), row["csrf_token"], digest
+    return _serialize_user(row), row["csrf_token"], digest, row["client_type"]
 
 
 def delete_session(path: Path, token_hash: str) -> None:
     with open_db(path) as db:
         db.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash,))
+
+
+def require_owner(user: dict[str, str]) -> None:
+    if user.get("role") != "owner":
+        raise ApiError(403, "This operation is restricted to the local vault owner.")
+
+
+def _verify_user_password(path: Path, user_id: str, password: str) -> sqlite3.Row:
+    with open_db(path) as db:
+        row = db.execute(
+            "SELECT id, password_salt, password_hash FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+    if not row:
+        raise ApiError(404, "Account was not found.")
+    candidate = _hash_password(password, bytes(row["password_salt"]))
+    if not hmac.compare_digest(candidate, bytes(row["password_hash"])):
+        raise ApiError(403, "Password is incorrect.")
+    return row
+
+
+def change_password(path: Path, user_id: str, payload: dict[str, Any]) -> dict[str, bool]:
+    current_password = str(payload.get("current_password") or "")
+    new_password = validate_password(payload.get("new_password"))
+    _verify_user_password(path, user_id, current_password)
+    if hmac.compare_digest(current_password, new_password):
+        raise InputError("New password must be different from the current password.")
+    salt = secrets.token_bytes(16)
+    password_hash = _hash_password(new_password, salt)
+    with open_db(path) as db:
+        db.execute("BEGIN IMMEDIATE")
+        db.execute(
+            "UPDATE users SET password_salt = ?, password_hash = ? WHERE id = ?",
+            (salt, password_hash, user_id),
+        )
+        db.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+        _append_sync_event(
+            db, user_id, "account_security", user_id, "upsert",
+            {"password_changed_at": now_iso()},
+        )
+    return {"password_changed": True, "reauth_required": True}
+
+
+def logout_all(path: Path, user_id: str, payload: dict[str, Any]) -> dict[str, bool]:
+    _verify_user_password(path, user_id, str(payload.get("current_password") or ""))
+    with open_db(path) as db:
+        db.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+    return {"logged_out_all": True}
 
 
 def _watchlist_rows(db: sqlite3.Connection, user_id: str) -> list[dict[str, str]]:
@@ -1051,6 +1224,20 @@ def _watchlist_rows(db: sqlite3.Connection, user_id: str) -> list[dict[str, str]
         (user_id,),
     ).fetchall()
     return [dict(row) for row in rows]
+
+
+def _user_symbols_from_db(db: sqlite3.Connection, user_id: str) -> list[str]:
+    return [
+        str(row["symbol"])
+        for row in db.execute(
+            "SELECT symbol FROM watchlist WHERE user_id = ? "
+            "UNION SELECT symbol FROM trades WHERE user_id = ? "
+            "UNION SELECT symbol FROM decision_runs WHERE user_id = ? "
+            "UNION SELECT symbol FROM research_plans WHERE user_id = ? "
+            "ORDER BY symbol",
+            (user_id, user_id, user_id, user_id),
+        ).fetchall()
+    ]
 
 
 def list_watchlist(path: Path, user_id: str) -> list[dict[str, str]]:
@@ -1095,42 +1282,6 @@ def remove_watchlist(path: Path, user_id: str, raw_symbol: Any) -> bool:
     return cursor.rowcount > 0
 
 
-def calculate_positions(rows: list[sqlite3.Row]) -> dict[str, dict[str, int | str]]:
-    positions: dict[str, dict[str, int | str]] = {}
-    for row in rows:
-        symbol = row["symbol"]
-        state = positions.setdefault(
-            symbol,
-            {
-                "symbol": symbol,
-                "asset_type": row["asset_type"],
-                "quantity_micros": 0,
-                "average_cost_micros": 0,
-                "realized_pnl_micros": 0,
-            },
-        )
-        quantity = int(row["quantity_micros"])
-        price = int(row["price_micros"])
-        held = int(state["quantity_micros"])
-        average = int(state["average_cost_micros"])
-        if row["side"] == "buy":
-            total_quantity = held + quantity
-            state["average_cost_micros"] = round(
-                (held * average + quantity * price) / total_quantity
-            )
-            state["quantity_micros"] = total_quantity
-        else:
-            if quantity > held:
-                raise RuntimeError(f"Ledger contains an oversell for {symbol}.")
-            state["realized_pnl_micros"] = int(state["realized_pnl_micros"]) + round(
-                quantity * (price - average) / int(SCALE)
-            )
-            state["quantity_micros"] = held - quantity
-            if state["quantity_micros"] == 0:
-                state["average_cost_micros"] = 0
-    return positions
-
-
 def _position_rows(db: sqlite3.Connection, user_id: str) -> list[sqlite3.Row]:
     return db.execute(
         "SELECT symbol, asset_type, side, quantity_micros, price_micros "
@@ -1143,7 +1294,9 @@ def _portfolio_from_db(db: sqlite3.Connection, user_id: str) -> dict[str, Any]:
     positions = calculate_positions(_position_rows(db, user_id))
     serialized = []
     total_realized = 0
-    for state in sorted(positions.values(), key=lambda item: str(item["symbol"])):
+    for state in sorted(
+        positions.values(), key=lambda item: (str(item["symbol"]), str(item["asset_type"]))
+    ):
         realized = int(state["realized_pnl_micros"])
         total_realized += realized
         if int(state["quantity_micros"]) == 0 and realized == 0:
@@ -1206,7 +1359,7 @@ def record_trade(path: Path, user_id: str, payload: dict[str, Any]) -> dict[str,
     with open_db(path) as db:
         db.execute("BEGIN IMMEDIATE")
         positions = calculate_positions(_position_rows(db, user_id))
-        held = int(positions.get(symbol, {}).get("quantity_micros", 0))
+        held = int(positions.get((symbol, asset_type), {}).get("quantity_micros", 0))
         if side == "sell" and quantity > held:
             raise InputError(
                 f"Cannot sell {decimal_string(quantity)} {symbol}; "
@@ -1286,7 +1439,10 @@ def _parse_portfolio_csv(payload: dict[str, Any]) -> dict[str, Any]:
     canonical_rows = sorted(rows, key=lambda row: (row["symbol"], row["asset_type"]))
     canonical = json.dumps(canonical_rows, sort_keys=True, separators=(",", ":"))
     total_cost = sum(
-        Decimal(row["quantity"]) * Decimal(row["average_cost"]) for row in rows
+        Decimal(row["quantity"])
+        * Decimal(row["average_cost"])
+        * Decimal(_asset_multiplier(row["asset_type"]))
+        for row in rows
     )
     return {
         "filename": filename,
@@ -2010,14 +2166,17 @@ def _day_trade_guardrails_from_db(db: sqlite3.Connection, user_id: str) -> dict[
             business_days.append(cursor.isoformat())
         cursor -= timedelta(days=1)
     start = business_days[-1]
+    start_utc = datetime.combine(
+        date.fromisoformat(start), time.min, tzinfo=NEW_YORK
+    ).astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
     rows = db.execute(
         "SELECT symbol, side, executed_at FROM trades WHERE user_id = ? AND asset_type = 'equity' "
-        "AND substr(executed_at, 1, 10) >= ? ORDER BY executed_at, rowid",
-        (user_id, start),
+        "AND executed_at >= ? ORDER BY executed_at, rowid",
+        (user_id, start_utc),
     ).fetchall()
     grouped: dict[tuple[str, str], dict[str, int]] = {}
     for row in rows:
-        key = (str(row["executed_at"])[:10], str(row["symbol"]))
+        key = (_new_york_date(str(row["executed_at"])).isoformat(), str(row["symbol"]))
         grouped.setdefault(key, {"buy": 0, "sell": 0})[str(row["side"])] += 1
     day_trade_details = []
     for (trading_date, symbol), counts in grouped.items():
@@ -2043,7 +2202,7 @@ def _day_trade_guardrails_from_db(db: sqlite3.Connection, user_id: str) -> dict[
     today_loss = sum((
         max(-Decimal(item["realized_pnl"]), Decimal(0))
         for item in day_reviews
-        if item["created_at"][:10] == today.isoformat() and item.get("realized_pnl") is not None
+        if _new_york_date(item["created_at"]) == today and item.get("realized_pnl") is not None
     ), Decimal(0))
     daily_limit = Decimal(profile["daily_loss_limit"])
     stop_conditions = []
@@ -2228,7 +2387,7 @@ def _portfolio_risk_from_db(db: sqlite3.Connection, user_id: str) -> dict[str, A
             continue
         market_row = latest.get(state["symbol"]) if state["asset_type"] == "equity" else None
         price = int(market_row["close_micros"]) if market_row else int(state["average_cost_micros"])
-        value = round(quantity * price / int(SCALE))
+        value = _position_value_micros(quantity, price, str(state["asset_type"]))
         cached_company = _sec_cached(db, f"fundamentals:{state['symbol']}") or {}
         company_profile = cached_company.get("company_profile") or {}
         sector = str(company_profile.get("industry") or "Unclassified")
@@ -2248,7 +2407,10 @@ def _portfolio_risk_from_db(db: sqlite3.Connection, user_id: str) -> dict[str, A
     for item in exposures:
         weight = Decimal(item["exposure_micros"]) * 100 / Decimal(gross) if gross else Decimal(0)
         item["weight_percent"] = format(weight.quantize(Decimal("0.01")), "f")
-        account_weight = Decimal(item["exposure_micros"]) * 100 / account_size if account_size else Decimal(0)
+        account_weight = (
+            Decimal(item["exposure_micros"]) * 100 / (account_size * SCALE)
+            if account_size else Decimal(0)
+        )
         item["account_weight_percent"] = format(account_weight.quantize(Decimal("0.01")), "f")
         item["over_max_position"] = account_weight > Decimal(profile["max_position_percent"])
         del item["exposure_micros"]
@@ -2266,11 +2428,12 @@ def _portfolio_risk_from_db(db: sqlite3.Connection, user_id: str) -> dict[str, A
     sectors: dict[str, Decimal] = {}
     for item in exposures:
         sectors[item["sector"]] = sectors.get(item["sector"], Decimal(0)) + Decimal(item["exposure"])
+    gross_dollars = Decimal(gross) / SCALE
     sector_exposure = [
         {
             "sector": sector,
             "exposure": format(value.normalize(), "f"),
-            "weight_percent": _percent(value * 100 / Decimal(gross)) if gross else "0.00",
+            "weight_percent": _percent(value * 100 / gross_dollars) if gross else "0.00",
         }
         for sector, value in sectors.items()
     ]
@@ -2372,7 +2535,9 @@ def _portfolio_performance_from_db(db: sqlite3.Connection, user_id: str) -> dict
     starting_cash = int(Decimal(profile["paper_account_size"]) * SCALE)
     cash = starting_cash
     for row in _position_rows(db, user_id):
-        value = round(int(row["quantity_micros"]) * int(row["price_micros"]) / int(SCALE))
+        value = _position_value_micros(
+            int(row["quantity_micros"]), int(row["price_micros"]), str(row["asset_type"])
+        )
         cash += value if row["side"] == "sell" else -value
 
     items = []
@@ -2390,8 +2555,12 @@ def _portfolio_performance_from_db(db: sqlite3.Connection, user_id: str) -> dict
         reference_price = (
             int(market_row["close_micros"]) if market_row else int(state["average_cost_micros"])
         )
-        cost = round(quantity * int(state["average_cost_micros"]) / int(SCALE))
-        value = round(quantity * reference_price / int(SCALE))
+        cost = _position_value_micros(
+            quantity, int(state["average_cost_micros"]), str(state["asset_type"])
+        )
+        value = _position_value_micros(
+            quantity, reference_price, str(state["asset_type"])
+        )
         item_unrealized = value - cost
         total_cost += cost
         market_value += value
@@ -2477,7 +2646,9 @@ def _portfolio_history_from_db(db: sqlite3.Connection, user_id: str) -> list[dic
             continue
         cash = starting_cash
         for row in included:
-            value = round(int(row["quantity_micros"]) * int(row["price_micros"]) / int(SCALE))
+            value = _position_value_micros(
+                int(row["quantity_micros"]), int(row["price_micros"]), str(row["asset_type"])
+            )
             cash += value if row["side"] == "sell" else -value
         states = calculate_positions(included)
         market_value = 0
@@ -2493,8 +2664,10 @@ def _portfolio_history_from_db(db: sqlite3.Connection, user_id: str) -> list[dic
                 eligible = [value for bar_date, value in prices_by_symbol[str(state["symbol"])] if bar_date <= current_date]
                 if eligible:
                     price = eligible[-1]
-            cost = round(quantity * int(state["average_cost_micros"]) / int(SCALE))
-            value = round(quantity * price / int(SCALE))
+            cost = _position_value_micros(
+                quantity, int(state["average_cost_micros"]), str(state["asset_type"])
+            )
+            value = _position_value_micros(quantity, price, str(state["asset_type"]))
             open_cost += cost
             market_value += value
             unrealized += value - cost
@@ -2539,12 +2712,15 @@ def _portfolio_actions_from_db(db: sqlite3.Connection, user_id: str) -> dict[str
         )
     for position in risk["positions"]:
         if position["over_max_position"] and not any(
-            item["symbol"] == position["symbol"] and item["action"] == "reduce_review"
+            position["asset_type"] == "equity"
+            and item["symbol"] == position["symbol"]
+            and item["action"] == "reduce_review"
             for item in actions
         ):
             actions.append(
                 {
-                    "symbol": position["symbol"], "action": "risk_exceeded",
+                    "symbol": position["symbol"], "asset_type": position["asset_type"],
+                    "action": "risk_exceeded",
                     "label": "Position limit exceeded",
                     "reason": f"{position['account_weight_percent']}% of account exceeds the {risk['max_position_percent']}% limit.",
                     "score": None, "account_percent": position["account_weight_percent"],
@@ -2581,7 +2757,11 @@ def rebalance_portfolio(
         raise InputError("Target percentages cannot exceed 100%.")
     with open_db(path) as db:
         performance = _portfolio_performance_from_db(db, user_id)
-        positions = {item["symbol"]: item for item in performance["positions"]}
+        positions = {
+            item["symbol"]: item
+            for item in performance["positions"]
+            if item["asset_type"] == "equity"
+        }
         account_value = Decimal(performance["estimated_account_value"])
         rows = []
         for symbol, target_percent in targets.items():
@@ -2977,7 +3157,7 @@ def _collection_runs_from_db(
     rows = db.execute(
         "SELECT id, job_type, status, requested_count, completed_count, result_json, "
         "error_text, started_at, finished_at FROM data_collection_runs "
-        "WHERE user_id = ? OR user_id IS NULL ORDER BY started_at DESC, id DESC LIMIT ?",
+        "WHERE user_id = ? ORDER BY started_at DESC, id DESC LIMIT ?",
         (user_id, max(1, min(limit, 100))),
     ).fetchall()
     return [
@@ -3140,6 +3320,10 @@ def run_scheduled_backup(path: Path) -> dict[str, Any] | None:
 
 def system_health(path: Path, user_id: str) -> dict[str, Any]:
     with open_db(path) as db:
+        user_row = db.execute("SELECT role FROM users WHERE id = ?", (user_id,)).fetchone()
+        is_owner = bool(user_row and user_row["role"] == "owner")
+        user_symbols = _user_symbols_from_db(db, user_id)
+        placeholders = ",".join("?" for _ in user_symbols)
         quick_check = str(db.execute("PRAGMA quick_check").fetchone()[0])
         counts = {
             "watchlist": int(
@@ -3180,11 +3364,22 @@ def system_health(path: Path, user_id: str) -> dict[str, Any]:
             ),
         }
         paper_control = _paper_order_control_from_db(db, user_id)
-        market_rows = db.execute(
-            "SELECT symbol, COUNT(*) AS bar_count, MAX(trading_date) AS latest_trading_date, "
-            "MAX(fetched_at) AS fetched_at FROM market_daily GROUP BY symbol ORDER BY symbol"
-        ).fetchall()
-        adjustment_count = int(db.execute("SELECT COUNT(*) FROM market_adjustments").fetchone()[0])
+        market_rows = (
+            db.execute(
+                f"SELECT symbol, COUNT(*) AS bar_count, MAX(trading_date) AS latest_trading_date, "
+                f"MAX(fetched_at) AS fetched_at FROM market_daily WHERE symbol IN ({placeholders}) "
+                "GROUP BY symbol ORDER BY symbol",
+                user_symbols,
+            ).fetchall()
+            if user_symbols else []
+        )
+        adjustment_count = (
+            int(db.execute(
+                f"SELECT COUNT(*) FROM market_adjustments WHERE symbol IN ({placeholders})",
+                user_symbols,
+            ).fetchone()[0])
+            if user_symbols else 0
+        )
         collection_runs = _collection_runs_from_db(db, user_id, 10)
         paper_snapshot = db.execute(
             "SELECT fetched_at, account_status, position_count, open_order_count "
@@ -3201,7 +3396,7 @@ def system_health(path: Path, user_id: str) -> dict[str, Any]:
                 "is_stale": (today - latest_date).days > 7,
             }
         )
-    backups = _backup_files(path)
+    backups = _backup_files(path) if is_owner else []
     latest_backup = None
     if backups:
         backup = backups[0]
@@ -3226,7 +3421,17 @@ def system_health(path: Path, user_id: str) -> dict[str, Any]:
     alpaca_key, alpaca_secret, alpaca_source = _alpaca_credentials()
     checks = [
         {"key": "database", "status": "pass" if quick_check == "ok" else "fail", "detail": f"SQLite quick_check: {quick_check}."},
-        {"key": "backup", "status": "pass" if backup_age_hours is not None and backup_age_hours <= 48 else "attention", "detail": f"Latest verified backup is {backup_age_hours} hours old." if backup_age_hours is not None else "No backup exists yet."},
+        {
+            "key": "backup",
+            "status": "pass" if not is_owner or (backup_age_hours is not None and backup_age_hours <= 48) else "attention",
+            "detail": (
+                "Backup maintenance is available only to the workspace owner."
+                if not is_owner
+                else f"Latest verified backup is {backup_age_hours} hours old."
+                if backup_age_hours is not None
+                else "No backup exists yet."
+            ),
+        },
         {"key": "market_cache", "status": "pass" if symbols and stale_count == 0 else "attention", "detail": f"{len(symbols)} symbols cached; {stale_count} stale."},
         {"key": "daily_provider", "status": "pass" if alpha_key else "attention", "detail": f"Alpha Vantage configured from {alpha_source}." if alpha_key else "Alpha Vantage credentials are not configured."},
         {"key": "intraday_provider", "status": "pass" if alpaca_key and alpaca_secret else "attention", "detail": f"Alpaca Paper/IEX configured from {alpaca_source}." if alpaca_key and alpaca_secret else "Alpaca Paper/IEX credentials are not configured."},
@@ -3246,6 +3451,7 @@ def system_health(path: Path, user_id: str) -> dict[str, Any]:
             "latest_backup": latest_backup,
             "backup_count": len(backups),
             "backup_retention": _backup_retention(),
+            "backup_access": "owner" if is_owner else "owner_only",
         },
         "account_counts": counts,
         "market_cache": {
@@ -3405,8 +3611,8 @@ def snapshot(path: Path, user_id: str) -> dict[str, Any]:
 
 
 def sync_feed(path: Path, user_id: str, since: int, limit: int = 200) -> dict[str, Any]:
-    if since < 0:
-        raise InputError("Sync cursor must be zero or greater.")
+    if not 0 <= since <= 2**63 - 1:
+        raise InputError("Sync cursor must be between 0 and 9223372036854775807.")
     limit = max(1, min(limit, 500))
     with open_db(path) as db:
         _evaluate_price_alerts(db, user_id)
@@ -3455,11 +3661,20 @@ def register_device(
         raise InputError("Platform must be web or ios.")
     current = now_iso()
     with open_db(path) as db:
+        session = db.execute(
+            "SELECT device_id, client_type FROM sessions WHERE token_hash = ? AND user_id = ?",
+            (token_hash, user_id),
+        ).fetchone()
+        if not session:
+            raise ApiError(401, "Authentication required.")
+        if session["device_id"] != device_id or session["client_type"] != platform:
+            raise ApiError(409, "A session cannot be rebound to another device or client type.")
         db.execute(
             "INSERT INTO devices(id, user_id, name, platform, created_at, last_seen_at) "
             "VALUES (?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(id) DO UPDATE SET name = excluded.name, platform = excluded.platform, "
-            "last_seen_at = excluded.last_seen_at WHERE devices.user_id = excluded.user_id",
+            "ON CONFLICT(id) DO UPDATE SET name = excluded.name, "
+            "last_seen_at = excluded.last_seen_at WHERE devices.user_id = excluded.user_id "
+            "AND devices.platform = excluded.platform",
             (device_id, user_id, name, platform, current, current),
         )
         row = db.execute(
@@ -3469,10 +3684,6 @@ def register_device(
         ).fetchone()
         if not row:
             raise ApiError(409, "That device ID belongs to another account.")
-        db.execute(
-            "UPDATE sessions SET device_id = ? WHERE token_hash = ? AND user_id = ?",
-            (device_id, token_hash, user_id),
-        )
     return dict(row)
 
 
@@ -3497,14 +3708,21 @@ def acknowledge_sync(path: Path, user_id: str, payload: dict[str, Any]) -> dict[
     return {"device_id": device_id, "revision": revision}
 
 
-def market_status(path: Path) -> dict[str, Any]:
+def market_status(path: Path, user_id: str) -> dict[str, Any]:
     _, configuration_source = _alpha_vantage_api_key()
     _, _, alpaca_source = _alpaca_credentials()
     with open_db(path) as db:
-        row = db.execute(
-            "SELECT COUNT(DISTINCT symbol) AS symbols, MAX(fetched_at) AS last_refresh "
-            "FROM market_daily WHERE source = 'alpha_vantage'"
-        ).fetchone()
+        symbols = _user_symbols_from_db(db, user_id)
+        placeholders = ",".join("?" for _ in symbols)
+        row = (
+            db.execute(
+                f"SELECT COUNT(DISTINCT symbol) AS symbols, MAX(fetched_at) AS last_refresh "
+                f"FROM market_daily WHERE source = 'alpha_vantage' "
+                f"AND symbol IN ({placeholders})",
+                symbols,
+            ).fetchone()
+            if symbols else {"symbols": 0, "last_refresh": None}
+        )
     return {
         "provider": "Alpha Vantage",
         "configured": configuration_source != "unconfigured",
@@ -3526,13 +3744,20 @@ def market_status(path: Path) -> dict[str, Any]:
 
 
 def data_source_readiness(path: Path, user_id: str) -> dict[str, Any]:
-    status = market_status(path)
+    status = market_status(path, user_id)
     today = date.today()
     with open_db(path) as db:
-        coverage = db.execute(
-            "SELECT symbol, COUNT(*) AS bars, MAX(trading_date) AS latest_date, "
-            "MAX(fetched_at) AS last_refresh FROM market_daily GROUP BY symbol ORDER BY symbol"
-        ).fetchall()
+        symbols = _user_symbols_from_db(db, user_id)
+        placeholders = ",".join("?" for _ in symbols)
+        coverage = (
+            db.execute(
+                f"SELECT symbol, COUNT(*) AS bars, MAX(trading_date) AS latest_date, "
+                f"MAX(fetched_at) AS last_refresh FROM market_daily "
+                f"WHERE symbol IN ({placeholders}) GROUP BY symbol ORDER BY symbol",
+                symbols,
+            ).fetchall()
+            if symbols else []
+        )
         paper = db.execute(
             "SELECT account_status, fetched_at FROM paper_account_snapshots "
             "WHERE user_id = ? ORDER BY fetched_at DESC, id DESC LIMIT 1", (user_id,),
@@ -4405,10 +4630,10 @@ def configure_market_data(payload: dict[str, Any]) -> dict[str, Any]:
                 "alpha-vantage",
                 "-s",
                 ALPHA_VANTAGE_KEYCHAIN_SERVICE,
-                "-w",
-                api_key,
                 "-U",
+                "-w",
             ],
+            input=api_key + "\n",
             capture_output=True,
             text=True,
             timeout=5,
@@ -4459,8 +4684,11 @@ def configure_realtime_data(payload: dict[str, Any]) -> dict[str, Any]:
     ):
         try:
             result = subprocess.run(
-                ["security", "add-generic-password", "-a", account, "-s", service, "-w", value, "-U"],
-                capture_output=True, text=True, timeout=5, check=False,
+                [
+                    "security", "add-generic-password", "-a", account,
+                    "-s", service, "-U", "-w",
+                ],
+                input=value + "\n", capture_output=True, text=True, timeout=5, check=False,
             )
         except (OSError, subprocess.TimeoutExpired):
             raise ApiError(500, "The Mac Keychain could not save the real-time data credentials.") from None
@@ -4841,7 +5069,8 @@ def submit_paper_order(path: Path, user_id: str, payload: dict[str, Any]) -> dic
         reference = limit_price or stop_price or _paper_reference_price(db, user_id, symbol)
         if reference is None:
             raise ApiError(409, "A cached reference price is required for the local notional check.")
-        estimated_notional = round(Decimal(quantity) * Decimal(reference) / SCALE)
+        asset_type = "option" if _parse_occ_option_symbol(symbol) else "equity"
+        estimated_notional = _position_value_micros(quantity, reference, asset_type)
         maximum = to_micros(control["max_order_notional"], "Maximum paper order notional")
         if estimated_notional > maximum:
             raise ApiError(409, f"Estimated paper order value exceeds the ${control['max_order_notional']} limit.")
@@ -5045,7 +5274,7 @@ def run_universe_scanner(path: Path, user_id: str, payload: dict[str, Any]) -> d
             symbols = list(dict.fromkeys(normalize_symbol(item) for item in raw_symbols))
         else:
             symbols = [str(row[0]) for row in db.execute(
-                "SELECT symbol FROM watchlist WHERE user_id = ? UNION SELECT symbol FROM market_daily ORDER BY symbol LIMIT 250",
+                "SELECT symbol FROM watchlist WHERE user_id = ? ORDER BY symbol LIMIT 250",
                 (user_id,),
             ).fetchall()]
         filters = json.loads(preset["filters_json"]) if preset and payload.get("filters") is None else _normalize_scanner_filters(payload)
@@ -5235,6 +5464,16 @@ def notification_center(path: Path, user_id: str) -> dict[str, Any]:
 def option_scenario(payload: dict[str, Any]) -> dict[str, Any]:
     spot = decimal_parameter(payload.get("spot"), "Spot price", minimum=Decimal("0.000001"), maximum=Decimal(1_000_000))
     days = int(decimal_parameter(payload.get("days_to_expiration", 30), "Days to expiration", minimum=Decimal(0), maximum=Decimal(3650)))
+    quoted_days = int(
+        decimal_parameter(
+            payload.get("quoted_days_to_expiration", days),
+            "Quoted days to expiration",
+            minimum=Decimal(0),
+            maximum=Decimal(3650),
+        )
+    )
+    if quoted_days < days:
+        raise InputError("Quoted days to expiration cannot be less than remaining days.")
     iv_shift = decimal_parameter(payload.get("iv_shift_percent", 0), "IV shift", minimum=Decimal(-95), maximum=Decimal(500))
     raw_legs = payload.get("legs")
     if not isinstance(raw_legs, list) or not 1 <= len(raw_legs) <= 6:
@@ -5262,8 +5501,16 @@ def option_scenario(payload: dict[str, Any]) -> dict[str, Any]:
         modeled_pnl = Decimal(0)
         for leg in legs:
             intrinsic = max(underlying - leg["strike"], Decimal(0)) if leg["right"] == "call" else max(leg["strike"] - underlying, Decimal(0))
+            entry_intrinsic = max(spot - leg["strike"], Decimal(0)) if leg["right"] == "call" else max(leg["strike"] - spot, Decimal(0))
+            entry_extrinsic = max(leg["premium"] - entry_intrinsic, Decimal(0))
             direction = Decimal(1 if leg["side"] == "buy" else -1)
-            time_value = leg["premium"] * Decimal(str(math.sqrt(max(days, 0) / 365))) * max(Decimal("0.05"), Decimal(1) + iv_shift / 100)
+            time_factor = (
+                Decimal(str(math.sqrt(days / quoted_days)))
+                if quoted_days > 0 else Decimal(0)
+            )
+            time_value = entry_extrinsic * time_factor * max(
+                Decimal("0.05"), Decimal(1) + iv_shift / 100
+            )
             expiration_pnl += direction * (intrinsic - leg["premium"]) * leg["quantity"] * 100
             modeled_pnl += direction * (intrinsic + time_value - leg["premium"]) * leg["quantity"] * 100
         expiration_values.append(expiration_pnl)
@@ -5286,9 +5533,19 @@ def option_scenario(payload: dict[str, Any]) -> dict[str, Any]:
         delta = call_delta if leg["right"] == "call" else call_delta - 1
         direction = Decimal(1 if leg["side"] == "buy" else -1)
         net_delta += direction * delta * leg["quantity"] * 100
-        net_theta += -direction * leg["premium"] * leg["quantity"] * 100 / Decimal(max(days, 1))
+        entry_intrinsic = max(spot - leg["strike"], Decimal(0)) if leg["right"] == "call" else max(leg["strike"] - spot, Decimal(0))
+        entry_extrinsic = max(leg["premium"] - entry_intrinsic, Decimal(0))
+        if days > 0 and quoted_days > 0:
+            net_theta += (
+                -direction
+                * entry_extrinsic
+                * leg["quantity"]
+                * 100
+                / (Decimal(2) * Decimal(str(math.sqrt(days * quoted_days))))
+            )
     return {
         "spot": format(spot.normalize(), "f"), "days_to_expiration": days,
+        "quoted_days_to_expiration": quoted_days,
         "iv_shift_percent": format(iv_shift.normalize(), "f"), "legs": [{**item, "strike": format(item["strike"].normalize(), "f"), "premium": format(item["premium"].normalize(), "f")} for item in legs],
         "payoff_points": points, "breakevens": list(dict.fromkeys(breakevens)),
         "sampled_max_profit": format(max(expiration_values).quantize(Decimal("0.01")), "f"),
@@ -5296,7 +5553,7 @@ def option_scenario(payload: dict[str, Any]) -> dict[str, Any]:
         "modeled_delta_shares": format(net_delta.quantize(Decimal("0.01")), "f"),
         "modeled_theta_per_day": format(net_theta.quantize(Decimal("0.01")), "f"),
         "assignment_risk": any(item["side"] == "sell" and ((item["right"] == "call" and spot > item["strike"]) or (item["right"] == "put" and spot < item["strike"])) for item in legs),
-        "scope": "Expiration payoff is deterministic. Pre-expiration P/L, delta, and theta are simplified scenarios, not executable quotes or a pricing model.",
+        "scope": "Expiration payoff is deterministic. Pre-expiration P/L and theta decay entry extrinsic value from quoted DTE; delta remains a simplified scenario, not an executable quote or pricing model.",
     }
 
 
@@ -5415,13 +5672,34 @@ def portfolio_intelligence(path: Path, user_id: str) -> dict[str, Any]:
 
 def data_quality_center(path: Path, user_id: str) -> dict[str, Any]:
     with open_db(path) as db:
-        market = db.execute(
-            "SELECT symbol, COUNT(*) AS bars, MIN(trading_date) AS first_date, MAX(trading_date) AS latest_date, MAX(fetched_at) AS fetched_at "
-            "FROM market_daily GROUP BY symbol ORDER BY symbol"
-        ).fetchall()
-        intraday = int(db.execute("SELECT COUNT(DISTINCT symbol || ':' || substr(bar_timestamp, 1, 10)) FROM intraday_bars").fetchone()[0])
+        user_symbols = _user_symbols_from_db(db, user_id)
+        placeholders = ",".join("?" for _ in user_symbols)
+        market = (
+            db.execute(
+                f"SELECT symbol, COUNT(*) AS bars, MIN(trading_date) AS first_date, "
+                f"MAX(trading_date) AS latest_date, MAX(fetched_at) AS fetched_at "
+                f"FROM market_daily WHERE symbol IN ({placeholders}) "
+                "GROUP BY symbol ORDER BY symbol",
+                user_symbols,
+            ).fetchall()
+            if user_symbols else []
+        )
+        intraday = (
+            int(db.execute(
+                f"SELECT COUNT(DISTINCT symbol || ':' || substr(bar_timestamp, 1, 10)) "
+                f"FROM intraday_bars WHERE symbol IN ({placeholders})",
+                user_symbols,
+            ).fetchone()[0])
+            if user_symbols else 0
+        )
         option_snapshots = int(db.execute("SELECT COUNT(*) FROM option_chain_snapshots WHERE user_id = ?", (user_id,)).fetchone()[0])
-        adjustments = int(db.execute("SELECT COUNT(*) FROM market_adjustments").fetchone()[0])
+        adjustments = (
+            int(db.execute(
+                f"SELECT COUNT(*) FROM market_adjustments WHERE symbol IN ({placeholders})",
+                user_symbols,
+            ).fetchone()[0])
+            if user_symbols else 0
+        )
         last_runs = _collection_runs_from_db(db, user_id, 20)
     current = date.today()
     symbols = []
@@ -5438,7 +5716,7 @@ def data_quality_center(path: Path, user_id: str) -> dict[str, Any]:
             "corporate_actions": adjustments, "recent_failed_runs": len(failures),
         },
         "symbols": symbols, "recent_runs": last_runs, "recent_failures": failures,
-        "provider_status": market_status(path),
+        "provider_status": market_status(path, user_id),
         "policies": {
             "daily_cache_minutes": os.environ.get("INVESTORLAB_MARKET_CACHE_MINUTES", "720"),
             "adjusted_history": os.environ.get("INVESTORLAB_ADJUSTED_DAILY") == "1",
@@ -5458,7 +5736,10 @@ def research_copilot(path: Path, user_id: str, payload: dict[str, Any]) -> dict[
         decision = next((item for item in _decision_center_from_db(db, user_id)["latest"] if item["symbol"] == symbol), None)
         market = _market_research_from_db(db, symbol)
         fundamentals = _sec_cached(db, f"fundamentals:{symbol}") or {"available": False}
-        position = next((item for item in _portfolio_risk_from_db(db, user_id)["positions"] if item["symbol"] == symbol), None)
+        position = next((
+            item for item in _portfolio_risk_from_db(db, user_id)["positions"]
+            if item["symbol"] == symbol and item["asset_type"] == "equity"
+        ), None)
     evidence = []
     if decision:
         evidence.append({"source": "Decision engine", "as_of": decision["created_at"], "fact": f"{decision['signal_label']} with score {decision.get('score') or '—'}/100.", "reference": f"decision:{decision['id']}"})
@@ -5513,6 +5794,7 @@ def generate_research_report(path: Path, user_id: str, period: str = "daily") ->
         validation = validation_dashboard(path, user_id, 60)
     content = {
         "period": period, "report_date": report_date, "generated_at": now_iso(),
+        "calculation_version": PORTFOLIO_CALCULATION_VERSION,
         "headline": briefing["headline"], "summary": briefing["summary"],
         "priority_tasks": briefing["tasks"][:10], "portfolio_performance": portfolio_state,
         "review_stats": review, "validation": validation,
@@ -5538,7 +5820,12 @@ def generate_research_report(path: Path, user_id: str, period: str = "daily") ->
 def list_research_reports(path: Path, user_id: str, limit: int = 20) -> list[dict[str, Any]]:
     with open_db(path) as db:
         rows = db.execute("SELECT id, content_json FROM research_reports WHERE user_id = ? ORDER BY report_date DESC, created_at DESC LIMIT ?", (user_id, max(1, min(limit, 100)))).fetchall()
-    return [{"id": row["id"], **json.loads(row["content_json"])} for row in rows]
+    reports = []
+    for row in rows:
+        content = json.loads(row["content_json"])
+        content.setdefault("calculation_version", "legacy-pre-v0.1.6")
+        reports.append({"id": row["id"], **content})
+    return reports
 
 
 def research_command_center(path: Path, user_id: str) -> dict[str, Any]:
@@ -5603,7 +5890,16 @@ def market_clock(path: Path) -> dict[str, Any]:
     if not isinstance(calendar, list):
         raise ApiError(502, "Alpaca market calendar returned a malformed response.")
     minutes = now_ny.hour * 60 + now_ny.minute
-    phase = "regular" if bool(clock.get("is_open")) else "premarket" if now_ny.weekday() < 5 and 240 <= minutes < 570 else "closed"
+    today_text = now_ny.date().isoformat()
+    is_trading_day = any(
+        isinstance(item, dict) and str(item.get("date")) == today_text
+        for item in calendar
+    )
+    phase = (
+        "regular" if bool(clock.get("is_open"))
+        else "premarket" if is_trading_day and 240 <= minutes < 570
+        else "closed"
+    )
     result = {
         "available": True,
         "is_open": bool(clock.get("is_open")),
@@ -5928,7 +6224,7 @@ def option_chain(
         return {
             "available": False, "configured": False, "symbol": symbol,
             "provider": "Alpaca Market Data", "feed": "indicative",
-            "reason": "Save Alpaca Market Data credentials to load option snapshots.",
+            "reason": "Save personal Alpaca Market Data credentials to load option snapshots.",
             "data_scope": "Option-chain snapshots are not configured.",
         }
     with open_db(path) as db:
@@ -6309,15 +6605,20 @@ def _day_trade_replay(bars: list[dict[str, Any]], current_date: date) -> dict[st
             sessions.setdefault(session_date, []).append(bar)
     outcomes = []
     for session_date, regular in sorted(sessions.items()):
-        opening = regular[:5]
-        if len(opening) < 5:
+        opening = [
+            bar for bar in regular
+            if (bar["timestamp"].hour, bar["timestamp"].minute) < (9, 35)
+        ]
+        if not opening:
             continue
         high = max(item["high"] for item in opening)
         low = min(item["low"] for item in opening)
         trigger_index = None
         direction = None
         entry = None
-        for index, bar in enumerate(regular[5:], start=5):
+        for index, bar in enumerate(regular):
+            if (bar["timestamp"].hour, bar["timestamp"].minute) < (9, 35):
+                continue
             if bar["close"] > high:
                 trigger_index, direction, entry = index, "long", bar["close"]
                 break
@@ -6373,7 +6674,7 @@ def _day_trade_replay(bars: list[dict[str, Any]], current_date: date) -> dict[st
         ),
         "outcomes": list(reversed(outcomes[-10:])),
         "reason": None if outcomes else "At least one prior session of minute bars is required.",
-        "scope": "Replays one deterministic first-five-minute opening-range breakout per cached prior session; same-bar target and stop hits are ambiguous.",
+        "scope": "Replays one deterministic 09:30-09:35 opening-range breakout per cached prior session; same-bar target and stop hits are ambiguous.",
     }
 
 
@@ -6410,19 +6711,30 @@ def day_trade_session_replay(
     if selected is None:
         selected = available_dates[0] if available_dates else None
     session = [item for item in parsed if selected and item["timestamp"].date() == selected]
-    if not selected or len(session) < 5:
+    if not selected or not session:
         return {
             "available": False, "symbol": symbol,
             "available_dates": [item.isoformat() for item in available_dates[:30]],
             "reason": "No complete cached regular-session minute bars are available for that date.",
         }
-    opening = session[:5]
+    opening = [
+        bar for bar in session
+        if (bar["timestamp"].hour, bar["timestamp"].minute) < (9, 35)
+    ]
+    if not opening:
+        return {
+            "available": False, "symbol": symbol,
+            "available_dates": [item.isoformat() for item in available_dates[:30]],
+            "reason": "No cached 09:30-09:35 opening-range bars are available for that date.",
+        }
     opening_high = max(item["high"] for item in opening)
     opening_low = min(item["low"] for item in opening)
     trigger_index = None
     direction = None
     entry = None
-    for index, bar in enumerate(session[5:], start=5):
+    for index, bar in enumerate(session):
+        if (bar["timestamp"].hour, bar["timestamp"].minute) < (9, 35):
+            continue
         if bar["close"] > opening_high:
             trigger_index, direction, entry = index, "long", bar["close"]
             break
@@ -6467,13 +6779,19 @@ def day_trade_session_replay(
                 mfe_r = (entry - min(item["low"] for item in observed)) / risk
 
     def timeframe_bars(minutes: int) -> list[dict[str, Any]]:
+        buckets: dict[datetime, list[dict[str, Any]]] = {}
+        for bar in session:
+            bucket_start = bar["timestamp"].replace(
+                minute=(bar["timestamp"].minute // minutes) * minutes,
+                second=0,
+                microsecond=0,
+            )
+            buckets.setdefault(bucket_start, []).append(bar)
         grouped = []
-        for start in range(0, len(session), minutes):
-            bucket = session[start:start + minutes]
-            if not bucket:
-                continue
+        for bucket_start in sorted(buckets):
+            bucket = buckets[bucket_start]
             grouped.append({
-                "timestamp": bucket[0]["timestamp"].isoformat(timespec="seconds"),
+                "timestamp": bucket_start.isoformat(timespec="seconds"),
                 "open": format(bucket[0]["open"].normalize(), "f"),
                 "high": format(max(item["high"] for item in bucket).normalize(), "f"),
                 "low": format(min(item["low"] for item in bucket).normalize(), "f"),
@@ -6528,7 +6846,10 @@ def day_trade_session_replay(
 
 
 def realtime_day_trade_plan(
-    path: Path, raw_symbol: Any, user_id: str | None = None
+    path: Path,
+    raw_symbol: Any,
+    user_id: str | None = None,
+    clock_data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     symbol = normalize_symbol(raw_symbol)
     key_id, secret, source = _alpaca_credentials()
@@ -6536,7 +6857,7 @@ def realtime_day_trade_plan(
         return {
             "available": False, "symbol": symbol, "configured": False,
             "provider": "Alpaca Market Data", "feed": "iex",
-            "reason": "Save Alpaca Market Data credentials to load IEX real-time prices and intraday levels.",
+            "reason": "Save personal Alpaca Market Data credentials to load IEX real-time prices and intraday levels.",
             "halt": {
                 "halted": False,
                 "reason_code": None,
@@ -6552,7 +6873,11 @@ def realtime_day_trade_plan(
     snapshot_payload = _alpaca_json(
         f"/v2/stocks/{symbol}/snapshot", {"feed": "iex"}, key_id, secret
     )
-    start = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat(timespec="seconds").replace("+00:00", "Z")
+    now_ny = datetime.now(timezone.utc).astimezone(NEW_YORK)
+    history_start = datetime.combine(
+        now_ny.date() - timedelta(days=10), time(4, 0), tzinfo=NEW_YORK
+    ).astimezone(timezone.utc)
+    start = history_start.isoformat(timespec="seconds").replace("+00:00", "Z")
     bars_payload = _alpaca_json(
         f"/v2/stocks/{symbol}/bars",
         {"timeframe": "1Min", "start": start, "limit": 10000, "adjustment": "raw", "feed": "iex", "sort": "asc"},
@@ -6576,19 +6901,27 @@ def realtime_day_trade_plan(
             )
         except (KeyError, InvalidOperation, TypeError, ValueError):
             continue
-    now_ny = datetime.now(timezone.utc).astimezone(NEW_YORK)
     session_date = max((bar["timestamp"].date() for bar in parsed), default=now_ny.date())
     session = [bar for bar in parsed if bar["timestamp"].date() == session_date]
     premarket = [bar for bar in session if (4, 0) <= (bar["timestamp"].hour, bar["timestamp"].minute) < (9, 30)]
     regular = [bar for bar in session if (9, 30) <= (bar["timestamp"].hour, bar["timestamp"].minute) < (16, 0)]
     opening_range = [bar for bar in regular if (bar["timestamp"].hour, bar["timestamp"].minute) < (9, 35)]
-    total_volume = sum(bar["volume"] for bar in session)
+    total_volume = sum(bar["volume"] for bar in regular)
     vwap_numerator = sum(
-        ((bar["high"] + bar["low"] + bar["close"]) / 3) * bar["volume"] for bar in session
+        ((bar["high"] + bar["low"] + bar["close"]) / 3) * bar["volume"] for bar in regular
+    )
+    latest_regular_time = max(
+        ((bar["timestamp"].hour, bar["timestamp"].minute) for bar in regular),
+        default=(9, 30),
     )
     prior_sessions: dict[date, int] = {}
     for bar in parsed:
-        if bar["timestamp"].date() != session_date:
+        bar_time = (bar["timestamp"].hour, bar["timestamp"].minute)
+        if (
+            bar["timestamp"].date() != session_date
+            and (9, 30) <= bar_time < (16, 0)
+            and bar_time <= latest_regular_time
+        ):
             prior_sessions[bar["timestamp"].date()] = prior_sessions.get(bar["timestamp"].date(), 0) + bar["volume"]
     average_prior_volume = (
         Decimal(sum(prior_sessions.values())) / Decimal(len(prior_sessions))
@@ -6617,12 +6950,8 @@ def realtime_day_trade_plan(
     spread_percent_value = (
         (ask - bid) * 100 / quote_mid if quote_mid is not None and quote_mid > 0 else None
     )
-    session_minutes = now_ny.hour * 60 + now_ny.minute
-    session_phase = (
-        "regular" if now_ny.weekday() < 5 and 570 <= session_minutes < 960
-        else "premarket" if now_ny.weekday() < 5 and 240 <= session_minutes < 570
-        else "closed"
-    )
+    exchange_clock = clock_data or market_clock(path)
+    session_phase = str(exchange_clock.get("session_phase") or "closed")
     setups = _day_trade_setups(
         price, vwap_value, opening_high_value, opening_low_value,
         premarket_high_value, premarket_low_value, relative_volume_value,
@@ -6659,6 +6988,7 @@ def realtime_day_trade_plan(
         "support": format(min(support_values).quantize(Decimal("0.0001")), "f") if support_values else None,
         "resistance": format(max(resistance_values).quantize(Decimal("0.0001")), "f") if resistance_values else None,
         "session_volume": total_volume,
+        "session_volume_scope": "regular_session",
         "relative_volume": (
             format(relative_volume_value.quantize(Decimal("0.01")), "f")
             if relative_volume_value is not None else None
@@ -6676,7 +7006,7 @@ def realtime_day_trade_plan(
         "replay": replay,
         "stored_bars": stored_bars,
         "fetched_at": now_iso(),
-        "data_scope": "IEX-only real-time observations on Alpaca Basic. Levels use observed IEX bars and may differ from consolidated SIP data.",
+        "data_scope": "IEX-only real-time observations on Alpaca Basic. VWAP, volume, and relative volume use regular-session bars through the latest observed minute and may differ from consolidated SIP data.",
         "cache_seconds": 20,
     }
     with open_db(path) as db:
@@ -6698,7 +7028,7 @@ def day_trade_scanner(path: Path, user_id: str, limit: int = 12) -> dict[str, An
     errors = []
     for symbol in symbols:
         try:
-            plan = realtime_day_trade_plan(path, symbol, user_id)
+            plan = realtime_day_trade_plan(path, symbol, user_id, clock)
         except (ApiError, InputError) as error:
             errors.append({"symbol": symbol, "error": str(error)})
             continue
@@ -7561,6 +7891,65 @@ def _metric_decimal(value: Any) -> Decimal | None:
     except (InvalidOperation, TypeError, ValueError):
         return None
     return number if number.is_finite() else None
+
+
+def realtime_quote(path: Path, raw_symbol: Any) -> dict[str, Any]:
+    symbol = normalize_symbol(raw_symbol)
+    key_id, secret, source = _alpaca_credentials()
+    if not key_id or not secret:
+        return {
+            "available": False,
+            "configured": False,
+            "symbol": symbol,
+            "provider": "Alpaca Market Data",
+            "feed": "iex",
+            "reason": "Save Alpaca credentials to show the latest IEX trade price.",
+        }
+    cache_key = f"alpaca-quote:{symbol}"
+    with open_db(path) as db:
+        cached = _sec_cached(db, cache_key, timedelta(seconds=20))
+        if cached is not None:
+            return {**cached, "cache_hit": True}
+    snapshot = _alpaca_json(
+        f"/v2/stocks/{symbol}/snapshot", {"feed": "iex"}, key_id, secret
+    )
+    latest_trade = snapshot.get("latestTrade")
+    latest_quote = snapshot.get("latestQuote")
+    daily_bar = snapshot.get("dailyBar")
+    latest_trade = latest_trade if isinstance(latest_trade, dict) else {}
+    latest_quote = latest_quote if isinstance(latest_quote, dict) else {}
+    daily_bar = daily_bar if isinstance(daily_bar, dict) else {}
+    price = _metric_decimal(latest_trade.get("p")) or _metric_decimal(daily_bar.get("c"))
+    bid = _metric_decimal(latest_quote.get("bp"))
+    ask = _metric_decimal(latest_quote.get("ap"))
+    now_ny = datetime.now(timezone.utc).astimezone(NEW_YORK)
+    session_minutes = now_ny.hour * 60 + now_ny.minute
+    session_phase = (
+        "regular"
+        if now_ny.weekday() < 5 and 570 <= session_minutes < 960
+        else "premarket"
+        if now_ny.weekday() < 5 and 240 <= session_minutes < 570
+        else "closed"
+    )
+    result = {
+        "available": price is not None,
+        "configured": True,
+        "symbol": symbol,
+        "provider": "Alpaca Market Data",
+        "configuration_source": source,
+        "feed": "iex",
+        "latest_price": format(price.normalize(), "f") if price is not None else None,
+        "bid": format(bid.normalize(), "f") if bid is not None else None,
+        "ask": format(ask.normalize(), "f") if ask is not None else None,
+        "latest_trade_at": latest_trade.get("t"),
+        "session_phase": session_phase,
+        "fetched_at": now_iso(),
+        "reason": None if price is not None else "Alpaca returned no latest IEX trade price.",
+        "scope": "Latest observed IEX trade from Alpaca Basic; it may differ from the consolidated SIP quote.",
+    }
+    with open_db(path) as db:
+        _store_sec_cache(db, cache_key, result)
+    return {**result, "cache_hit": False}
 
 
 def _higher_is_better(value: Decimal | None, bands: tuple[tuple[Decimal, int], ...]) -> int:
@@ -9173,6 +9562,8 @@ def _daily_briefing_from_db(
             if filing_count
             else "New candidates are ready"
             if opportunity_count
+            else "Market evidence needs refresh"
+            if data_issue_count
             else "Workspace is up to date"
         ),
         "summary": f"{attention_count} attention item(s), {opportunity_count} opportunity candidate(s).",
@@ -9192,12 +9583,16 @@ def _position_decision_context(
     position = next(
         (
             item for item in _portfolio_from_db(db, user_id)["positions"]
-            if item["symbol"] == symbol and Decimal(item["quantity"]) > 0
+            if item["symbol"] == symbol and item["asset_type"] == "equity"
+            and Decimal(item["quantity"]) > 0
         ),
         None,
     )
     risk_position = next(
-        (item for item in _portfolio_risk_from_db(db, user_id)["positions"] if item["symbol"] == symbol),
+        (
+            item for item in _portfolio_risk_from_db(db, user_id)["positions"]
+            if item["symbol"] == symbol and item["asset_type"] == "equity"
+        ),
         None,
     )
     account_size = Decimal(profile["paper_account_size"])
@@ -9748,8 +10143,8 @@ def run_scheduled_intraday_collection(path: Path) -> list[dict[str, Any]]:
     key_id, secret, _ = _alpaca_credentials()
     if not key_id or not secret:
         return []
-    now_ny = datetime.now(timezone.utc).astimezone(NEW_YORK)
-    if now_ny.weekday() >= 5 or not (4, 0) <= (now_ny.hour, now_ny.minute) < (16, 5):
+    clock = market_clock(path)
+    if clock.get("session_phase") not in {"premarket", "regular"}:
         return []
     try:
         maximum = int(os.environ.get("INVESTORLAB_INTRADAY_SYMBOL_LIMIT", "12"))
@@ -9775,7 +10170,7 @@ def run_scheduled_intraday_collection(path: Path) -> list[dict[str, Any]]:
         errors = []
         for symbol in symbols:
             try:
-                plan = realtime_day_trade_plan(path, symbol, user_id)
+                plan = realtime_day_trade_plan(path, symbol, user_id, clock)
                 if plan.get("available"):
                     completed.append({"symbol": symbol, "available": True})
                 else:
@@ -9999,7 +10394,19 @@ def _decision_scheduler_loop(path: Path, stop: threading.Event) -> None:
 def market_research(path: Path, raw_symbol: Any) -> dict[str, Any]:
     symbol = normalize_symbol(raw_symbol)
     with open_db(path) as db:
-        return _market_research_from_db(db, symbol)
+        research = _market_research_from_db(db, symbol)
+    try:
+        quote = realtime_quote(path, symbol)
+    except ApiError as error:
+        quote = {
+            "available": False,
+            "configured": True,
+            "symbol": symbol,
+            "provider": "Alpaca Market Data",
+            "feed": "iex",
+            "reason": str(error),
+        }
+    return {**research, "realtime_quote": quote}
 
 
 def refresh_market(path: Path, raw_symbol: Any, api_key: str, cache_minutes: int = 720) -> dict[str, Any]:
@@ -10194,8 +10601,10 @@ def make_handler(db_path: Path, web_root: Path) -> type[BaseHTTPRequestHandler]:
             self, require_csrf: bool = False
         ) -> tuple[dict[str, str], str, str, bool]:
             token, is_bearer = self._token_from_request()
-            user, csrf_token, token_hash = authenticate_session(db_path, token)
-            if require_csrf and not is_bearer:
+            user, csrf_token, token_hash, client_type = authenticate_session(db_path, token)
+            if is_bearer != (client_type == "ios"):
+                raise ApiError(401, "Session transport does not match the authenticated client.")
+            if require_csrf and client_type == "web":
                 supplied = self.headers.get("X-CSRF-Token", "")
                 if not supplied or not hmac.compare_digest(supplied, csrf_token):
                     raise ApiError(403, "Invalid CSRF token.")
@@ -10324,7 +10733,12 @@ def make_handler(db_path: Path, web_root: Path) -> type[BaseHTTPRequestHandler]:
                         )
                     elif route.startswith("/api/day-trade/live/"):
                         symbol = unquote(route.removeprefix("/api/day-trade/live/"))
-                        self._send_json(200, realtime_day_trade_plan(db_path, symbol, user_id))
+                        self._send_json(
+                            200,
+                            realtime_day_trade_plan(
+                                db_path, symbol, user_id, market_clock(db_path)
+                            ),
+                        )
                     elif route.startswith("/api/options/chain/"):
                         symbol = unquote(route.removeprefix("/api/options/chain/"))
                         query = parse_qs(urlparse(self.path).query)
@@ -10349,12 +10763,16 @@ def make_handler(db_path: Path, web_root: Path) -> type[BaseHTTPRequestHandler]:
                     elif route == "/api/system/health":
                         self._send_json(200, system_health(db_path, user_id))
                     elif route == "/api/system/backups":
+                        require_owner(user)
                         self._send_json(200, list_database_backups(db_path))
                     elif route == "/api/alpaca/paper-account":
+                        require_owner(user)
                         self._send_json(200, paper_account(db_path, user_id))
                     elif route == "/api/alpaca/paper-orders/control":
+                        require_owner(user)
                         self._send_json(200, paper_order_control(db_path, user_id))
                     elif route == "/api/alpaca/paper-orders":
+                        require_owner(user)
                         query = parse_qs(urlparse(self.path).query)
                         try:
                             order_limit = int(query.get("limit", ["100"])[0])
@@ -10411,7 +10829,7 @@ def make_handler(db_path: Path, web_root: Path) -> type[BaseHTTPRequestHandler]:
                             raise InputError("Journal limit must be an integer.") from None
                         self._send_json(200, list_journal_entries(db_path, user_id, limit))
                     elif route == "/api/market/status":
-                        self._send_json(200, market_status(db_path))
+                        self._send_json(200, market_status(db_path, user_id))
                     elif route == "/api/data-sources/readiness":
                         self._send_json(200, data_source_readiness(db_path, user_id))
                     elif route.startswith("/api/market/research/"):
@@ -10468,6 +10886,18 @@ def make_handler(db_path: Path, web_root: Path) -> type[BaseHTTPRequestHandler]:
                             {"logged_out": True},
                             {"Set-Cookie": self._session_cookie("", 0)},
                         )
+                    elif route == "/api/auth/change-password":
+                        self._send_json(
+                            200,
+                            change_password(db_path, user_id, payload),
+                            {"Set-Cookie": self._session_cookie("", 0)},
+                        )
+                    elif route == "/api/auth/logout-all":
+                        self._send_json(
+                            200,
+                            logout_all(db_path, user_id, payload),
+                            {"Set-Cookie": self._session_cookie("", 0)},
+                        )
                     elif route == "/api/watchlist":
                         self._send_json(
                             201, add_watchlist(db_path, user_id, payload.get("symbol"))
@@ -10483,10 +10913,13 @@ def make_handler(db_path: Path, web_root: Path) -> type[BaseHTTPRequestHandler]:
                     elif route == "/api/alerts":
                         self._send_json(201, create_price_alert(db_path, user_id, payload))
                     elif route == "/api/market/configure":
+                        require_owner(user)
                         self._send_json(200, configure_market_data(payload))
                     elif route == "/api/realtime/configure":
+                        require_owner(user)
                         self._send_json(200, configure_realtime_data(payload))
                     elif route == "/api/data-sources/test":
+                        require_owner(user)
                         self._send_json(
                             200,
                             test_data_source_connection(
@@ -10494,21 +10927,27 @@ def make_handler(db_path: Path, web_root: Path) -> type[BaseHTTPRequestHandler]:
                             ),
                         )
                     elif route == "/api/system/backup":
+                        require_owner(user)
                         self._send_json(201, create_database_backup(db_path, user_id))
                     elif route == "/api/system/restore":
+                        require_owner(user)
                         self._send_json(200, restore_database_backup(db_path, user_id, payload))
                     elif route == "/api/system/health-check":
                         self._send_json(200, run_system_health_check(db_path, user_id))
                     elif route == "/api/validation/run":
                         self._send_json(200, run_validation_cycle(db_path, user_id))
                     elif route == "/api/alpaca/paper-account/sync":
+                        require_owner(user)
                         self._send_json(200, sync_paper_account(db_path, user_id))
                     elif route == "/api/alpaca/paper-orders":
+                        require_owner(user)
                         self._send_json(201, submit_paper_order(db_path, user_id, payload))
                     elif re.fullmatch(r"/api/alpaca/paper-orders/[^/]+/cancel", route):
+                        require_owner(user)
                         order_id = unquote(route.removeprefix("/api/alpaca/paper-orders/").removesuffix("/cancel"))
                         self._send_json(200, cancel_paper_order(db_path, user_id, order_id, payload))
                     elif re.fullmatch(r"/api/alpaca/paper-orders/[^/]+/replace", route):
+                        require_owner(user)
                         order_id = unquote(route.removeprefix("/api/alpaca/paper-orders/").removesuffix("/replace"))
                         self._send_json(200, replace_paper_order(db_path, user_id, order_id, payload))
                     elif route == "/api/scanner-presets":
@@ -10621,6 +11060,7 @@ def make_handler(db_path: Path, web_root: Path) -> type[BaseHTTPRequestHandler]:
                         200, update_decision_settings(db_path, user["id"], payload)
                     )
                 elif route == "/api/alpaca/paper-orders/control":
+                    require_owner(user)
                     self._send_json(
                         200, update_paper_order_control(db_path, user["id"], payload)
                     )

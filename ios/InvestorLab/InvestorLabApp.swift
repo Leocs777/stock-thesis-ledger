@@ -108,11 +108,11 @@ private struct AuthenticationView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     HStack(spacing: 11) {
-                        Text("IL")
-                            .font(.caption.weight(.black))
-                            .foregroundStyle(Color.labInk)
+                        Image("AppLogo")
+                            .resizable()
+                            .scaledToFit()
                             .frame(width: 36, height: 36)
-                            .background(Color.signalOrange, in: RoundedRectangle(cornerRadius: 11))
+                            .clipShape(RoundedRectangle(cornerRadius: 11))
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Investor Lab").font(.headline).foregroundStyle(.white)
                             Text("LOCAL ACCOUNT LAYER")
@@ -220,6 +220,11 @@ private enum ResearchMode: String, CaseIterable, Identifiable {
     var id: Self { self }
 }
 
+private struct WorkspaceJump: Identifiable {
+    let id: String
+    let title: String
+}
+
 private struct DashboardView: View {
     @ObservedObject var store: LabStore
     let openCommand: () -> Void
@@ -245,64 +250,108 @@ private struct DashboardView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    header
-                    Picker("Workspace", selection: $mode) {
-                        ForEach(ResearchMode.allCases) { item in
-                            Text(LocalizedStringKey(item.rawValue)).tag(item)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        header
+                        Picker("Workspace", selection: $mode) {
+                            ForEach(ResearchMode.allCases) { item in
+                                Text(LocalizedStringKey(item.rawValue)).tag(item)
+                            }
                         }
-                    }
-                    .pickerStyle(.segmented)
-                    .accessibilityLabel("Research workspace")
+                        .pickerStyle(.segmented)
+                        .accessibilityLabel("Research workspace")
+                        workspaceJumpBar(proxy)
 
-                    switch mode {
-                    case .invest:
-                        investWorkspace
-                    case .dayTrade:
-                        DayTradeWorkspace(store: store)
-                    case .options:
-                        OptionsWorkspace(store: store)
+                        switch mode {
+                        case .invest:
+                            investWorkspace
+                        case .dayTrade:
+                            DayTradeWorkspace(store: store)
+                        case .options:
+                            OptionsWorkspace(store: store)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 18)
+                }
+                .background(Color.labPaper.ignoresSafeArea())
+                .refreshable { await store.load() }
+                .navigationTitle("Investor Lab")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Menu {
+                            Button("Add to watchlist", systemImage: "star") {
+                                showingWatchlistForm = true
+                            }
+                            Button("Record paper trade", systemImage: "arrow.left.arrow.right") {
+                                showingTradeForm = true
+                            }
+                            Button("Add price alert", systemImage: "bell") {
+                                showingAlertForm = true
+                            }
+                        } label: {
+                            Image(systemName: "plus.circle.fill")
+                        }
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 18)
-            }
-            .background(Color.labPaper.ignoresSafeArea())
-            .refreshable { await store.load() }
-            .navigationTitle("Investor Lab")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button("Add to watchlist", systemImage: "star") {
-                            showingWatchlistForm = true
-                        }
-                        Button("Record paper trade", systemImage: "arrow.left.arrow.right") {
-                            showingTradeForm = true
-                        }
-                        Button("Add price alert", systemImage: "bell") {
-                            showingAlertForm = true
-                        }
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                    }
+                .sheet(isPresented: $showingWatchlistForm) {
+                    AddWatchlistView(store: store)
                 }
-            }
-            .sheet(isPresented: $showingWatchlistForm) {
-                AddWatchlistView(store: store)
-            }
-            .sheet(isPresented: $showingTradeForm) {
-                PaperTradeView(store: store)
-            }
-            .sheet(isPresented: $showingAlertForm) {
-                AddPriceAlertView(store: store)
-            }
-            .onAppear { loadStrategyProfile() }
-            .onChange(of: store.snapshot.investorProfile.updatedAt) { _, _ in
-                loadStrategyProfile()
+                .sheet(isPresented: $showingTradeForm) {
+                    PaperTradeView(store: store)
+                }
+                .sheet(isPresented: $showingAlertForm) {
+                    AddPriceAlertView(store: store)
+                }
+                .onAppear { loadStrategyProfile() }
+                .onChange(of: store.snapshot.investorProfile.updatedAt) { _, _ in
+                    loadStrategyProfile()
+                }
             }
         }
+    }
+
+    private var workspaceJumps: [WorkspaceJump] {
+        switch mode {
+        case .invest:
+            return [
+                WorkspaceJump(id: "invest-workflow", title: "Guided workflow"),
+                WorkspaceJump(id: "invest-strategy", title: "Trading strategy"),
+                WorkspaceJump(id: "invest-performance", title: "Paper portfolio performance"),
+                WorkspaceJump(id: "invest-watchlist", title: "Watchlist"),
+                WorkspaceJump(id: "invest-market", title: "Market evidence"),
+                WorkspaceJump(id: "invest-decision", title: "Decision analysis"),
+            ]
+        case .dayTrade:
+            return [
+                WorkspaceJump(id: "day-scanner", title: "Watchlist scanner"),
+                WorkspaceJump(id: "day-live", title: "Live market plan"),
+                WorkspaceJump(id: "day-guardrails", title: "Risk guardrails"),
+                WorkspaceJump(id: "day-worksheet", title: "Risk worksheet"),
+            ]
+        case .options:
+            return [
+                WorkspaceJump(id: "options-chain", title: "Option chain"),
+                WorkspaceJump(id: "options-payoff", title: "Payoff worksheet"),
+            ]
+        }
+    }
+
+    private func workspaceJumpBar(_ proxy: ScrollViewProxy) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(workspaceJumps) { jump in
+                    Button(labLocalized(jump.title)) {
+                        withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(jump.id, anchor: .top) }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+        }
+        .accessibilityLabel("Section shortcuts")
     }
 
     private var header: some View {
@@ -361,20 +410,20 @@ private struct DashboardView: View {
                 detail: store.marketStatus?.configured == true ? "Alpha Vantage" : "API key required"
             )
         }
-        workflowGuide
-        strategyLens
+        workflowGuide.id("invest-workflow")
+        strategyLens.id("invest-strategy")
         dailyBriefing
-        portfolioPerformance
+        portfolioPerformance.id("invest-performance")
         paperAccountMirror
         watchlistScreener
         companySearch
-        watchlist
-        marketEvidence
+        watchlist.id("invest-watchlist")
+        marketEvidence.id("invest-market")
         fundamentalEvidence
         earningsCalendar
         secEventMonitor
         decisionCenter
-        decisionDetail
+        decisionDetail.id("invest-decision")
         positions
         portfolioRisk
         portfolioActions
@@ -401,7 +450,6 @@ private struct DashboardView: View {
                 workflowSymbol = symbol
                 Task {
                     await store.refreshMarket(symbol)
-                    await store.generateDecision(symbol)
                 }
             }
             workflowButton(number: "03", title: "Prepare paper order", detail: "Carry the selected symbol into the Paper-only ticket.") {
@@ -481,7 +529,7 @@ private struct DashboardView: View {
         ) {
             Button("Synchronize paper account") { Task { await store.synchronizePaperAccount() } }
                 .buttonStyle(.bordered)
-                .disabled(store.isLoading)
+                .disabled(store.isLoading || store.currentUser?.role != "owner")
             if let paper = store.snapshot.paperAccount, paper.available, let account = paper.account {
                 HStack(spacing: 10) {
                     LabMetricCard(label: "Paper equity", value: (account.equity ?? "0").currency, detail: account.status ?? "unknown")
@@ -775,7 +823,13 @@ private struct DashboardView: View {
                             mode = .options
                         } else if let symbol = item.symbol {
                             mode = .invest
-                            openResearch(symbol)
+                            if item.category == "data" {
+                                researchSymbol = symbol
+                                workflowSymbol = symbol
+                                Task { await store.refreshMarket(symbol) }
+                            } else {
+                                openResearch(symbol)
+                            }
                         }
                     } label: {
                         HStack(spacing: 12) {
@@ -924,41 +978,59 @@ private struct DashboardView: View {
     }
 
     private var watchlist: some View {
-        LabSection(title: "Watchlist research", subtitle: "Cached evidence for every followed symbol.", badge: "END OF DAY") {
+        LabSection(title: "Watchlist research", subtitle: "Open cached research or refresh one followed ticker directly.", badge: "END OF DAY") {
+            Button("Refresh all tickers") { Task { await store.refreshWatchlistDecisions() } }
+                .buttonStyle(LabButtonStyle())
+                .disabled(store.isLoading || store.snapshot.watchlist.isEmpty)
             if store.snapshot.watchlistResearch.isEmpty {
                 LabEmptyLine(text: "Add the first company you want to follow.")
             } else {
                 ForEach(store.snapshot.watchlistResearch) { research in
-                    Button {
-                        openResearch(research.symbol)
-                    } label: {
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(research.symbol).font(.headline)
-                                Text(labLocalized(research.stateLabel ?? "No cached evidence"))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            if let close = research.latestClose, let change = research.changePercent {
-                                VStack(alignment: .trailing, spacing: 4) {
-                                    Text(close.currency).font(.subheadline.monospacedDigit().weight(.semibold))
-                                    Text("\(change.decimal >= 0 ? "+" : "")\(change)%")
-                                        .font(.caption.monospacedDigit())
-                                        .foregroundStyle(change.decimal < 0 ? Color.red : Color.labGreen)
+                    HStack(spacing: 8) {
+                        Button {
+                            openResearch(research.symbol)
+                        } label: {
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(research.symbol).font(.headline)
+                                    Text(labLocalized(research.stateLabel ?? "No cached evidence"))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
                                 }
-                            } else {
-                                Text("REFRESH")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundStyle(Color.signalOrange)
+                                Spacer()
+                                if let close = research.latestClose, let change = research.changePercent {
+                                    VStack(alignment: .trailing, spacing: 4) {
+                                        Text(close.currency).font(.subheadline.monospacedDigit().weight(.semibold))
+                                        Text("\(change.decimal >= 0 ? "+" : "")\(change)%")
+                                            .font(.caption.monospacedDigit())
+                                            .foregroundStyle(change.decimal < 0 ? Color.red : Color.labGreen)
+                                    }
+                                } else {
+                                    Text("Needs refresh")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundStyle(Color.signalOrange)
+                                }
                             }
+                            .frame(maxWidth: .infinity)
+                            .contentShape(Rectangle())
                         }
-                        .padding(12)
-                        .background(Color.white, in: RoundedRectangle(cornerRadius: 14))
-                        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.labLine))
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Open \(research.symbol) research")
+                        Button {
+                            researchSymbol = research.symbol
+                            workflowSymbol = research.symbol
+                            Task { await store.refreshMarket(research.symbol) }
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                                .frame(width: 38, height: 38)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(store.isLoading)
+                        .accessibilityLabel("Refresh \(research.symbol)")
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Open \(research.symbol) research")
+                    .padding(10)
+                    .background(Color.white, in: RoundedRectangle(cornerRadius: 14))
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.labLine))
                 }
             }
         }
@@ -1045,6 +1117,18 @@ private struct DashboardView: View {
                         value: (research.latestClose ?? "0").currency,
                         detail: "\(research.changePercent ?? "0")% vs prior"
                     )
+                }
+                if let quote = research.realtimeQuote {
+                    LabMetricCard(
+                        label: "Latest IEX trade",
+                        value: quote.available ? (quote.latestPrice ?? "0").currency : "—",
+                        detail: quote.available
+                            ? "\(labLocalized(quote.sessionPhase ?? "unknown")) · IEX · \(labLocalized("Latest observed trade"))"
+                            : labLocalized(quote.reason ?? "Configure Alpaca for an observed live price")
+                    )
+                    if let scope = quote.scope {
+                        Text(labLocalized(scope)).font(.caption2).foregroundStyle(.secondary)
+                    }
                 }
                 if let range = research.rangeStats {
                     HStack(spacing: 10) {
@@ -1485,7 +1569,7 @@ private struct DashboardView: View {
                 if let quality = decision.dataQuality {
                     HStack(spacing: 10) {
                         LabMetricCard(label: "Data quality", value: "\(quality.score) / 100", detail: labLocalized(quality.status))
-                        LabMetricCard(label: "Decision gate", value: quality.decisionEligible ? "Eligible" : "Blocked", detail: "\(quality.observations ?? 0) bars")
+                        LabMetricCard(label: "Scoring readiness", value: quality.decisionEligible ? "Ready to score" : "Needs more data", detail: "\(quality.observations ?? 0) bars")
                     }
                 }
                 HStack(spacing: 10) {
@@ -2086,6 +2170,7 @@ private struct DayTradeWorkspace: View {
                 Text(labLocalized(scanner.scope)).font(.caption2).foregroundStyle(.secondary)
             }
         }
+        .id("day-scanner")
         LabSection(
             title: "Live premarket plan",
             subtitle: "Alpaca Basic IEX observations plus Nasdaq current trade halts.",
@@ -2197,6 +2282,7 @@ private struct DayTradeWorkspace: View {
                 }
             }
         }
+        .id("day-live")
         let guardrails = store.snapshot.dayTradeGuardrails
         LabSection(
             title: "PDT transition & daily stop monitor",
@@ -2217,6 +2303,7 @@ private struct DayTradeWorkspace: View {
                 }
             }
         }
+        .id("day-guardrails")
         LabSection(title: "Manual risk worksheet", subtitle: "Share capacity comes only from the limits you enter.", badge: "NO LIVE ORDER") {
             Picker("Direction", selection: $direction) {
                 Text("Long").tag("long")
@@ -2276,6 +2363,7 @@ private struct DayTradeWorkspace: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .id("day-worksheet")
         .onAppear {
             if symbol.isEmpty { symbol = store.snapshot.watchlist.first?.symbol ?? "" }
             applyPlanningDefaults()
@@ -2426,6 +2514,7 @@ private struct OptionsWorkspace: View {
                 LabEmptyLine(text: chain.reason ?? "Option chain is unavailable.")
             }
         }
+        .id("options-chain")
         LabSection(title: "Expiration payoff", subtitle: "Deterministic contract math using manual premiums.", badge: "MANUAL DATA") {
             Picker("Strategy", selection: $strategy) {
                 Text("Long call").tag("long_call")
@@ -2493,6 +2582,7 @@ private struct OptionsWorkspace: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .id("options-payoff")
         .onAppear {
             if symbol.isEmpty { symbol = store.snapshot.watchlist.first?.symbol ?? "" }
             applyPlanningDefaults()
@@ -2637,8 +2727,10 @@ private struct CommandCenterView: View {
     private var paperExecution: some View {
         LabSection(
             title: "Alpaca Paper execution gate",
-            subtitle: "Real-account routing is not implemented. The server checks acknowledgement, order value, daily loss, position size, and duplicate IDs.",
-            badge: paperEnabled ? "ENABLED" : "LOCKED"
+            subtitle: store.currentUser?.role == "owner"
+                ? "Real-account routing is not implemented. The server checks acknowledgement, order value, daily loss, position size, and duplicate IDs."
+                : "Paper account routing and shared provider controls are available only to the workspace owner.",
+            badge: store.currentUser?.role == "owner" ? (paperEnabled ? "ENABLED" : "LOCKED") : "OWNER ONLY"
         ) {
             Toggle("Enable Alpaca Paper routing", isOn: $paperEnabled)
             HStack(spacing: 10) {
@@ -2717,6 +2809,7 @@ private struct CommandCenterView: View {
                 .padding(.vertical, 3)
             }
         }
+        .disabled(store.currentUser?.role != "owner")
     }
 
     private var universeScanner: some View {
@@ -3560,6 +3653,7 @@ private struct SettingsView: View {
     @State private var importFilename = ""
     @State private var importCSV = ""
     @State private var showingAccountDeletion = false
+    @State private var showingAccountSecurity = false
     @State private var databaseBackupStatus = "Restore requires an explicit maintenance action."
     @State private var selectedBackup = ""
     @State private var restoreConfirmation = ""
@@ -3581,6 +3675,7 @@ private struct SettingsView: View {
                         LabeledContent("Name", value: user.displayName)
                         LabeledContent("Email", value: user.email)
                         Button("Sign out", role: .destructive) { Task { await store.logout() } }
+                        Button("Password and sessions") { showingAccountSecurity = true }
                     }
                 }
                 Section("Data source readiness") {
@@ -3776,6 +3871,7 @@ private struct SettingsView: View {
                     Button("Run and record health check") { Task { await store.runSystemHealthCheck() } }
                 }
                 Section("Portable backup") {
+                    if store.currentUser?.role == "owner" {
                     Button("Create verified database backup") {
                         Task {
                             if let backup = await store.createDatabaseBackup() {
@@ -3808,6 +3904,10 @@ private struct SettingsView: View {
                         .disabled(selectedBackup.isEmpty || restoreConfirmation != "RESTORE \(selectedBackup)" || store.isLoading)
                     } else {
                         Text("Create a verified backup before using restore.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    } else {
+                        Text("Database backup maintenance is available only to the workspace owner.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Button("Create account export") {
@@ -3843,7 +3943,7 @@ private struct SettingsView: View {
                             }
                         }
                     }
-                    .disabled(marketAPIKey.isEmpty)
+                    .disabled(marketAPIKey.isEmpty || store.currentUser?.role != "owner")
                     Button("Test Alpha Vantage connection") {
                         Task {
                             if let result = await store.testDataSource("alpha_vantage") {
@@ -3853,7 +3953,7 @@ private struct SettingsView: View {
                             }
                         }
                     }
-                    .disabled(store.marketStatus?.configured != true || store.isLoading)
+                    .disabled(store.marketStatus?.configured != true || store.isLoading || store.currentUser?.role != "owner")
                     Link(
                         "Get a free personal key",
                         destination: URL(string: "https://www.alphavantage.co/support/#api-key")!
@@ -3878,7 +3978,7 @@ private struct SettingsView: View {
                             }
                         }
                     }
-                    .disabled(alpacaKeyID.isEmpty || alpacaSecret.isEmpty)
+                    .disabled(alpacaKeyID.isEmpty || alpacaSecret.isEmpty || store.currentUser?.role != "owner")
                     Button("Test Alpaca Paper connection") {
                         Task {
                             if let result = await store.testDataSource("alpaca_paper") {
@@ -3888,9 +3988,9 @@ private struct SettingsView: View {
                             }
                         }
                     }
-                    .disabled(store.marketStatus?.realtime.configured != true || store.isLoading)
+                    .disabled(store.marketStatus?.realtime.configured != true || store.isLoading || store.currentUser?.role != "owner")
                     Button("Synchronize Paper account") { Task { await store.synchronizePaperAccount() } }
-                        .disabled(store.marketStatus?.realtime.configured != true || store.isLoading)
+                        .disabled(store.marketStatus?.realtime.configured != true || store.isLoading || store.currentUser?.role != "owner")
                     Text("Connection testing and account sync are read-only. Paper order routing remains a separate locked control in Command.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
@@ -3933,6 +4033,9 @@ private struct SettingsView: View {
             }
             .sheet(isPresented: $showingAccountDeletion) {
                 DeleteAccountView(store: store)
+            }
+            .sheet(isPresented: $showingAccountSecurity) {
+                AccountSecurityView(store: store)
             }
         }
     }
@@ -4082,6 +4185,50 @@ private struct DeleteAccountView: View {
     }
 }
 
+private struct AccountSecurityView: View {
+    @ObservedObject var store: LabStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var currentPassword = ""
+    @State private var newPassword = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Change password") {
+                    SecureField("Current password", text: $currentPassword)
+                    SecureField("New password", text: $newPassword)
+                    Button("Change password and sign out everywhere") {
+                        Task {
+                            if await store.changePassword(
+                                currentPassword: currentPassword,
+                                newPassword: newPassword
+                            ) { dismiss() }
+                        }
+                    }
+                    .disabled(currentPassword.isEmpty || newPassword.count < 12 || store.isLoading)
+                }
+                Section("Sessions") {
+                    Button("Sign out on all devices", role: .destructive) {
+                        Task {
+                            if await store.logoutAll(currentPassword: currentPassword) { dismiss() }
+                        }
+                    }
+                    .disabled(currentPassword.isEmpty || store.isLoading)
+                    Text("Both actions revoke every Web and iPhone session and require a new sign-in.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Account security")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
 private struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]
 
@@ -4147,7 +4294,8 @@ private final class LabStore: ObservableObject {
     init() {
         let defaults = UserDefaults.standard
         let saved = defaults.string(forKey: "serverURL") ?? ""
-        serverURL = saved.isEmpty ? Self.defaultServerURL : saved
+        serverURL = saved
+        if serverURL.isEmpty { serverURL = Self.defaultServerURL }
         defaults.set(serverURL, forKey: "serverURL")
     }
 
@@ -4181,7 +4329,8 @@ private final class LabStore: ObservableObject {
         await authenticate(
             path: "/api/auth/register",
             payload: AuthPayload(
-                client: "ios", displayName: displayName, email: email, password: password
+                client: "ios", deviceID: currentDeviceID, deviceName: UIDevice.current.name,
+                displayName: displayName, email: email, password: password
             )
         )
     }
@@ -4189,24 +4338,30 @@ private final class LabStore: ObservableObject {
     func login(email: String, password: String) async -> Bool {
         await authenticate(
             path: "/api/auth/login",
-            payload: AuthPayload(client: "ios", displayName: nil, email: email, password: password)
+            payload: AuthPayload(
+                client: "ios", deviceID: currentDeviceID, deviceName: UIDevice.current.name,
+                displayName: nil, email: email, password: password
+            )
         )
     }
 
     func logout() async {
-        var logoutError: Error?
-        if accessToken != nil {
-            do {
-                let _: LogoutResponse = try await request(
-                    path: "/api/auth/logout", method: "POST", body: EmptyPayload()
-                )
-            } catch {
-                if (error as? LabError)?.status != 401 { logoutError = error }
-            }
+        guard accessToken != nil else {
+            do { try clearLocalSession() }
+            catch { errorMessage = error.localizedDescription }
+            return
         }
-        do { try clearLocalSession() }
-        catch { logoutError = error }
-        if let logoutError { errorMessage = logoutError.localizedDescription }
+        do {
+            let _: LogoutResponse = try await request(
+                path: "/api/auth/logout", method: "POST", body: EmptyPayload()
+            )
+            try clearLocalSession()
+        } catch let error as LabError where error.status == 401 {
+            do { try clearLocalSession() }
+            catch { errorMessage = error.localizedDescription }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     func load() async {
@@ -4222,9 +4377,13 @@ private final class LabStore: ObservableObject {
                 path: "/api/system/health", method: "GET", body: Optional<WatchPayload>.none
             )
             do {
-                systemBackups = try await request(
-                    path: "/api/system/backups", method: "GET", body: Optional<WatchPayload>.none
-                )
+                if currentUser?.role == "owner" {
+                    systemBackups = try await request(
+                        path: "/api/system/backups", method: "GET", body: Optional<WatchPayload>.none
+                    )
+                } else {
+                    systemBackups = []
+                }
             } catch let error as LabError where error.status == 404 {
                 systemBackups = []
             }
@@ -4762,10 +4921,14 @@ private final class LabStore: ObservableObject {
                 path: "/api/research/command-center", method: "GET",
                 body: Optional<EmptyPayload>.none
             )
-            paperOrderLedger = try await request(
-                path: "/api/alpaca/paper-orders", method: "GET",
-                body: Optional<EmptyPayload>.none
-            )
+            if currentUser?.role == "owner" {
+                paperOrderLedger = try await request(
+                    path: "/api/alpaca/paper-orders", method: "GET",
+                    body: Optional<EmptyPayload>.none
+                )
+            } else {
+                paperOrderLedger = nil
+            }
             let notifications: NotificationRuleCenter = try await request(
                 path: "/api/notifications/rules", method: "GET",
                 body: Optional<EmptyPayload>.none
@@ -5220,15 +5383,53 @@ private final class LabStore: ObservableObject {
         }
     }
 
+    func changePassword(currentPassword: String, newPassword: String) async -> Bool {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let _: AccountSecurityResponse = try await request(
+                path: "/api/auth/change-password", method: "POST",
+                body: ChangePasswordPayload(
+                    currentPassword: currentPassword, newPassword: newPassword
+                )
+            )
+            try clearLocalSession()
+            return true
+        } catch {
+            if (error as? LabError)?.status != 401 { errorMessage = error.localizedDescription }
+            return false
+        }
+    }
+
+    func logoutAll(currentPassword: String) async -> Bool {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let _: AccountSecurityResponse = try await request(
+                path: "/api/auth/logout-all", method: "POST",
+                body: LogoutAllPayload(currentPassword: currentPassword)
+            )
+            try clearLocalSession()
+            return true
+        } catch {
+            if (error as? LabError)?.status != 401 { errorMessage = error.localizedDescription }
+            return false
+        }
+    }
+
     func loadSystemHealth() async {
         guard authState == .signedIn else { return }
         do {
             systemHealth = try await request(
                 path: "/api/system/health", method: "GET", body: Optional<WatchPayload>.none
             )
-            systemBackups = try await request(
-                path: "/api/system/backups", method: "GET", body: Optional<WatchPayload>.none
-            )
+            if currentUser?.role == "owner" {
+                systemBackups = try await request(
+                    path: "/api/system/backups", method: "GET", body: Optional<WatchPayload>.none
+                )
+            } else {
+                systemBackups = []
+            }
         } catch {
             if (error as? LabError)?.status != 401 { errorMessage = error.localizedDescription }
         }
@@ -5240,9 +5441,13 @@ private final class LabStore: ObservableObject {
             systemHealth = try await request(
                 path: "/api/system/health-check", method: "POST", body: EmptyPayload()
             )
-            systemBackups = try await request(
-                path: "/api/system/backups", method: "GET", body: Optional<WatchPayload>.none
-            )
+            if currentUser?.role == "owner" {
+                systemBackups = try await request(
+                    path: "/api/system/backups", method: "GET", body: Optional<WatchPayload>.none
+                )
+            } else {
+                systemBackups = []
+            }
         } catch {
             if (error as? LabError)?.status != 401 { errorMessage = error.localizedDescription }
         }
@@ -5682,9 +5887,10 @@ private struct UserProfile: Decodable {
     let id: String
     let email: String
     let displayName: String
+    let role: String
 
     enum CodingKeys: String, CodingKey {
-        case id, email
+        case id, email, role
         case displayName = "display_name"
     }
 }
@@ -6003,6 +6209,25 @@ private struct MarketCacheHealth: Decodable {
     }
 }
 
+private struct RealtimeQuote: Decodable {
+    let available: Bool
+    let configured: Bool
+    let latestPrice: String?
+    let bid: String?
+    let ask: String?
+    let latestTradeAt: String?
+    let sessionPhase: String?
+    let reason: String?
+    let scope: String?
+
+    enum CodingKeys: String, CodingKey {
+        case available, configured, bid, ask, reason, scope
+        case latestPrice = "latest_price"
+        case latestTradeAt = "latest_trade_at"
+        case sessionPhase = "session_phase"
+    }
+}
+
 private struct MarketResearch: Decodable, Identifiable {
     let available: Bool
     let symbol: String
@@ -6016,6 +6241,7 @@ private struct MarketResearch: Decodable, Identifiable {
     let bars: [MarketBar]?
     let rangeStats: MarketRangeStats?
     let dataQuality: MarketDataQuality?
+    let realtimeQuote: RealtimeQuote?
     var id: String { symbol }
 
     enum CodingKeys: String, CodingKey {
@@ -6027,6 +6253,7 @@ private struct MarketResearch: Decodable, Identifiable {
         case historicalScenario = "historical_scenario"
         case rangeStats = "range_stats"
         case dataQuality = "data_quality"
+        case realtimeQuote = "realtime_quote"
     }
 }
 
@@ -8168,6 +8395,36 @@ private struct DeleteAccountPayload: Encodable {
     let confirmation: String
 }
 
+private struct ChangePasswordPayload: Encodable {
+    let currentPassword: String
+    let newPassword: String
+
+    enum CodingKeys: String, CodingKey {
+        case currentPassword = "current_password"
+        case newPassword = "new_password"
+    }
+}
+
+private struct LogoutAllPayload: Encodable {
+    let currentPassword: String
+
+    enum CodingKeys: String, CodingKey {
+        case currentPassword = "current_password"
+    }
+}
+
+private struct AccountSecurityResponse: Decodable {
+    let passwordChanged: Bool?
+    let reauthRequired: Bool?
+    let loggedOutAll: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case passwordChanged = "password_changed"
+        case reauthRequired = "reauth_required"
+        case loggedOutAll = "logged_out_all"
+    }
+}
+
 private struct MarketConfiguration: Decodable {
     let provider: String
     let configured: Bool
@@ -8183,12 +8440,16 @@ private struct MarketConfigurationPayload: Encodable {
 
 private struct AuthPayload: Encodable {
     let client: String
+    let deviceID: String
+    let deviceName: String
     let displayName: String?
     let email: String
     let password: String
 
     enum CodingKeys: String, CodingKey {
         case client, email, password
+        case deviceID = "device_id"
+        case deviceName = "device_name"
         case displayName = "display_name"
     }
 }

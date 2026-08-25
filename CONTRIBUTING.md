@@ -51,7 +51,7 @@ profiles, archives, or exported IPAs.
 
 ```bash
 python3 -m unittest -v
-python3 -m py_compile app.py test_app.py scripts/check-local-links.py
+python3 -m py_compile app.py test_app.py investor_lab/portfolio_math.py scripts/check-local-links.py
 python3 scripts/check-local-links.py
 zsh -n setup.sh scripts/archive-testflight.sh scripts/reload-local-service.sh
 plutil -lint ios/InvestorLab/Info.plist ios/ExportOptions.plist \

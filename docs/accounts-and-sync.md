@@ -8,6 +8,8 @@ Status: local-first reference implementation.
   `INVESTORLAB_ALLOW_REGISTRATION=1`.
 - Scrypt password hashing with a random per-account salt.
 - Thirty-day random sessions; SQLite stores only a SHA-256 token hash.
+- Sessions are bound to the issuing Web or iOS transport and registered device.
+  Password rotation and sign-out-all-devices revoke every existing session.
 - Browser authentication through an HttpOnly, SameSite=Strict cookie and CSRF
   token on every state-changing request.
 - iOS authentication through a bearer token stored with
@@ -20,6 +22,9 @@ Status: local-first reference implementation.
   excludes credentials, session tokens, and provider keys.
 - Session-to-device binding: removing another device also revokes every session
   registered to that device. The current device must sign out normally.
+- The first account is the local vault owner. Later controlled accounts are
+  members; shared provider credentials, Paper controls, backups, restore, and
+  system-maintenance mutations are owner-only.
 - Preview-first CSV position import with a 500-row limit, whole-file validation,
   an atomic append-only write, and duplicate-content fingerprint protection.
 - Authenticated data-health reporting for SQLite integrity, account record
@@ -81,7 +86,7 @@ Status: local-first reference implementation.
 
 ## Schema migration
 
-Startup applies forward-only SQLite migrations through schema v16, each inside a
+Startup applies forward-only SQLite migrations through schema v17, each inside a
 `BEGIN IMMEDIATE` transaction. The original v1 tables remain available as
 `watchlist_v1_archive` and `trades_v1_archive`. Their rows are copied into the
 new user-scoped tables with no owner. The first account atomically claims those
@@ -108,7 +113,8 @@ history. Schema v15 adds immutable `strategy_versions`, read-only
 backup/restore health automation, and expands collection-run job types without
 weakening their status constraints. Schema v16 adds `paper_order_controls`,
 `paper_order_intents`, `scanner_presets`, `notification_rules`, and
-`research_reports`.
+`research_reports`. Schema v17 adds user roles and binds sessions to their
+client transport and registered device.
 
 No downgrade migration is provided. Back up `data/investor-lab.sqlite3` before
 manually changing or replacing the database.
@@ -141,6 +147,8 @@ Authenticated routes:
 
 - `GET /api/auth/session`
 - `POST /api/auth/logout`
+- `POST /api/auth/logout-all`
+- `POST /api/auth/change-password`
 - `GET /api/snapshot`
 - `GET /api/sync`
 - `GET|POST /api/devices`

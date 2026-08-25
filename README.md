@@ -4,12 +4,14 @@
 
 **An open-source Investment Thesis Ledger for reproducible stock research and Paper-only review.**
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 Web and iOS share one private ledger, one explainable decision trail, and one
 Paper-only execution boundary.
 
 [![CI](https://github.com/Leocs777/stock-thesis-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/Leocs777/stock-thesis-ledger/actions/workflows/ci.yml)
 [![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-22313f.svg)](LICENSE)
-[![Release: v0.1.4](https://img.shields.io/badge/release-v0.1.4-1d4ed8.svg)](#v014-guided-workflow)
+[![Release: v0.1.6](https://img.shields.io/badge/release-v0.1.6-1d4ed8.svg)](#v016-correctness-and-session-security)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-0f766e.svg)](#quick-start)
 [![Paper only](https://img.shields.io/badge/brokerage-Paper_only-e85d2a.svg)](#safety-boundary)
 
@@ -39,6 +41,23 @@ evidence; the journal, worksheets, sync, and paper ledger remain local.
 [Read the strategy methodology](docs/strategy-methodology.md) ·
 [Run a Paper validation campaign](docs/paper-validation-protocol.md) ·
 [Understand the safety model](#safety-boundary)
+
+## v0.1.6 correctness and session security
+
+Version 0.1.6 fixes portfolio math across equity and option positions, applies
+the standard 100-share option contract multiplier consistently, records a
+calculation version in generated reports, and computes intraday VWAP and
+relative volume from regular-session, time-matched observations.
+
+Sessions are now bound to their Web or iOS transport and registered device.
+The first account becomes the local vault owner; shared provider, broker, backup,
+restore, and health-maintenance controls are owner-only. Password rotation and
+sign-out-all-devices invalidate existing sessions. Web and iOS preserve the
+signed-in state when a recoverable panel request or logout request fails.
+
+Version 0.1.5 added one-click whole-watchlist refresh, per-symbol refresh,
+observed IEX prices, shorter workspace navigation, and the shared product logo.
+See the [changelog](CHANGELOG.md) for release details.
 
 ## v0.1.4 guided workflow
 
@@ -136,6 +155,10 @@ filing-change, and option-expiration notifications.
   indicative Greeks, expiration attention, and paper-plan reviews.
 - Day-trade planning with user-defined risk limits, VWAP/opening-range
   observations, no-trade conditions, session replay, and execution review.
+- Regular-session, time-matched VWAP and relative volume, a New York market
+  clock, and clock-aware replay windows that make the evidence scope explicit.
+- Separate equity and option lots throughout portfolio calculations, including
+  option contract multipliers, account/sector exposure, and Paper notional.
 - Alpaca Paper balance, position, order, and fill mirroring, with Paper-order
   submit, replace, and cancel actions behind explicit acknowledgements and risk checks.
 
@@ -303,7 +326,7 @@ archive.
 
 ```bash
 python3 -m unittest -v
-python3 -m py_compile app.py test_app.py
+python3 -m py_compile app.py test_app.py investor_lab/portfolio_math.py
 python3 scripts/check-local-links.py
 zsh -n setup.sh scripts/archive-testflight.sh scripts/reload-local-service.sh
 plutil -lint ios/InvestorLab/Info.plist ios/ExportOptions.plist \
@@ -327,8 +350,8 @@ real provider credentials.
 
 ## Current limitations
 
-- This is a single-user-oriented local reference implementation, not a hardened
-  hosted multi-tenant service.
+- This is a local-first reference implementation. Controlled additional local
+  accounts are supported, but it is not a hardened hosted multi-tenant service.
 - Daily Alpha Vantage data and IEX observations are not consolidated real-time
   market data. Every screen must be read with its displayed timestamp and source.
 - Options snapshots are indicative. Calculated Greeks and payoff diagrams are
@@ -343,6 +366,8 @@ real provider credentials.
 
 ## Documentation
 
+- [简体中文项目说明](README.zh-CN.md)
+- [Changelog](CHANGELOG.md)
 - [Architecture](docs/architecture.md)
 - [Strategy methodology](docs/strategy-methodology.md)
 - [Paper validation protocol](docs/paper-validation-protocol.md)

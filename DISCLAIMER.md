@@ -1,5 +1,7 @@
 # Financial and software disclaimer
 
+[English](DISCLAIMER.md) | [简体中文](DISCLAIMER.zh-CN.md)
+
 Stock Thesis Ledger is open-source software for research, education, software testing,
 and paper-trading workflows.
 

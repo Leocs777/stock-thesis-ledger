@@ -147,6 +147,42 @@ Targets are inactive for Avoid, Reduce, and Sell / exit review states. All
 levels use cached end-of-day bars and are hypothetical, not forecasts or
 executable quotes.
 
+## Portfolio and option accounting
+
+Equity and option positions are keyed separately by `(symbol, asset_type)` so a
+stock lot and an option contract cannot be merged. Values use:
+
+`quantity × price × asset multiplier`, where the multiplier is 1 for equity and
+100 for options. Realized P/L uses the same multiplier. Equity positions use the
+latest cached daily close when available; option positions fall back to their
+paper average cost because the daily-equity cache is not an option mark feed.
+The UI labels that fallback. Gross-position weight uses total invested exposure,
+while account weight uses the saved paper account size. Industry exposure is a
+descriptive grouping from cached SEC company metadata.
+
+The standard option worksheet calculates expiration intrinsic value for every
+leg, subtracts the entered premium, applies side, quantity, and the 100-share
+multiplier, then sums the legs. The flexible scenario samples 25 underlying
+prices. Its pre-expiration line retains quoted extrinsic value using a square-root
+time-decay heuristic and a user-supplied IV shift. Its delta and theta are
+simplified scenario measures, not Black-Scholes prices or executable Greeks.
+
+## Day-trade evidence and sizing
+
+The risk worksheet computes per-share risk from entry-to-stop distance. The
+maximum whole shares are the strictest of the per-trade risk budget, remaining
+daily-loss capacity, and saved maximum-position allocation. A plan is blocked
+when direction geometry, reward/risk, halt state, market phase, spread, volume,
+or saved loss guardrails fail their explicit checks.
+
+Intraday VWAP uses typical price `(high + low + close) / 3`, weighted by volume,
+from 09:30 through 16:00 America/New_York only. Relative volume divides current
+regular-session volume through the latest observed minute by the average volume
+through the same minute in available prior sessions. Premarket bars are retained
+for premarket levels but do not enter VWAP or relative-volume totals. IEX data is
+not consolidated SIP coverage, so every result exposes its feed, timestamp, and
+scope.
+
 ## Walk-forward scenario
 
 At least 70 daily bars are required. Starting after 50 bars, each step:

@@ -1,3 +1,4 @@
+import app
 import json
 import html
 import os
@@ -6,12 +7,13 @@ import sqlite3
 import tempfile
 import threading
 import unittest
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from http.cookiejar import CookieJar
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 from app import (
     InputError,
@@ -53,6 +55,10 @@ class FakeResponse:
 
 class InvestorLabAPITest(unittest.TestCase):
     def setUp(self):
+        self.alpaca_credentials_patcher = patch(
+            "app._alpaca_credentials", return_value=("", "", "unconfigured")
+        )
+        self.alpaca_credentials_patcher.start()
         self.temp = tempfile.TemporaryDirectory()
         root = Path(self.temp.name)
         self.db = root / "test.sqlite3"
@@ -70,6 +76,7 @@ class InvestorLabAPITest(unittest.TestCase):
         self.server.shutdown()
         self.server.server_close()
         self.temp.cleanup()
+        self.alpaca_credentials_patcher.stop()
 
     def test_macos_tls_uses_system_ca_without_overriding_an_explicit_bundle(self):
         ca_bundle = Path(self.temp.name) / "cert.pem"
@@ -80,6 +87,18 @@ class InvestorLabAPITest(unittest.TestCase):
         with patch.dict(os.environ, {"SSL_CERT_FILE": "/custom/cert.pem"}):
             _configure_tls_ca_environment("darwin", ca_bundle)
             self.assertEqual(os.environ["SSL_CERT_FILE"], "/custom/cert.pem")
+
+    def test_public_checkout_has_portable_ios_and_broker_defaults(self):
+        root = Path(__file__).parent
+        ios_source = (root / "ios" / "InvestorLab" / "InvestorLabApp.swift").read_text()
+        xcode_project = (root / "ios" / "InvestorLab.xcodeproj" / "project.pbxproj").read_text()
+        server_source = (root / "app.py").read_text()
+        self.assertIn('private static let defaultServerURL = ""', ios_source)
+        self.assertNotIn(".ngrok" + "-free.", ios_source)
+        self.assertNotIn("DEVELOPMENT" + "_TEAM =", xcode_project)
+        self.assertIn("PRODUCT_BUNDLE_IDENTIFIER = org.investorlab.app;", xcode_project)
+        self.assertNotIn("https://api" + ".alpaca.markets", server_source)
+        self.assertIn("https://paper-api" + ".alpaca.markets", server_source)
 
     def request(self, method, path, payload=None, *, csrf=True, bearer=None):
         body = json.dumps(payload).encode() if payload is not None else None
@@ -98,8 +117,13 @@ class InvestorLabAPITest(unittest.TestCase):
         with self.opener.open(self.base + path) as response:
             return response.status, response.headers.get_content_type(), response.read().decode()
 
-    def register(self, client="web"):
-        payload = {**VALID_ACCOUNT, "client": client}
+    def register(self, client="web", device_id=None, device_name=None):
+        payload = {
+            **VALID_ACCOUNT,
+            "client": client,
+            "device_id": device_id or f"{client}-test-device",
+            "device_name": device_name or f"Test {client}",
+        }
         status, data = self.request("POST", "/api/auth/register", payload, csrf=False)
         self.csrf_token = data["csrf_token"]
         return status, data
@@ -119,6 +143,15 @@ class InvestorLabAPITest(unittest.TestCase):
         self.assertIn('id="paperOrderControlAcknowledged"', app_shell)
         self.assertIn('id="paperOrderAcknowledged"', app_shell)
         self.assertNotIn('id="paperOrderConfirmation"', app_shell)
+        self.assertIn('/assets/investor-lab-logo.png', app_shell)
+        self.assertIn('id="watchRefreshAllButton"', app_shell)
+        self.assertIn('id="marketLive"', app_shell)
+        self.assertIn('class="section-jump"', app_shell)
+
+        with self.opener.open(self.base + "/assets/investor-lab-logo.png") as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.headers.get_content_type(), "image/png")
+            self.assertEqual(response.read(8), b"\x89PNG\r\n\x1a\n")
 
         ios_app = (Path(__file__).parent / "ios" / "InvestorLab" / "InvestorLabApp.swift").read_text()
         self.assertIn("controlAcknowledged", ios_app)
@@ -137,7 +170,7 @@ class InvestorLabAPITest(unittest.TestCase):
         status, health = self.request("GET", "/api/health")
         self.assertEqual(status, 200)
         self.assertTrue(health["auth_required"])
-        self.assertEqual(health["schema_version"], 16)
+        self.assertEqual(health["schema_version"], 17)
 
     def test_positive_micros_rejects_nonfinite_values(self):
         for value in ("NaN", "Infinity", "-Infinity"):
@@ -224,14 +257,22 @@ class InvestorLabAPITest(unittest.TestCase):
         self.assertIn("labLocalized(item.assetType.capitalized)", ios_app)
         self.assertIn('private static let defaultServerURL = ""', ios_app)
         self.assertNotIn("serverURLMigration", ios_app)
+        self.assertNotIn(".ngrok-free.", ios_app)
         self.assertIn("components.host != nil", ios_app)
         self.assertIn("refreshFilingNotificationsIfAuthorized", ios_app)
         self.assertIn("notifySecFilingChanges(data.sec_events)", web)
         self.assertIn('id="workflowPanel"', web)
+        self.assertIn('id="performancePanel"', web)
+        self.assertIn('id="marketEvidencePanel"', web)
+        self.assertIn('data-refresh-symbol', web)
         self.assertIn('id="commandAdvancedToggle"', web)
         self.assertIn('data-command-advanced hidden', web)
         self.assertIn('@AppStorage("workflowSymbol")', ios_app)
         self.assertIn("if showAdvancedTools", ios_app)
+        self.assertNotIn('"Decision gate": "决策门槛', web)
+        self.assertNotIn('"Decision gate" = "决策门槛', strings)
+        self.assertNotIn("已阻塞", web)
+        self.assertNotIn("已阻塞", strings)
 
     def test_protected_data_requires_authentication(self):
         with self.assertRaises(HTTPError) as error:
@@ -266,6 +307,195 @@ class InvestorLabAPITest(unittest.TestCase):
         with self.assertRaises(HTTPError) as error:
             self.request("POST", "/api/auth/register", VALID_ACCOUNT, csrf=False)
         self.assertEqual(error.exception.code, 403)
+
+    def test_session_transport_device_binding_password_change_and_logout_all(self):
+        _, auth = self.register(device_id="web-security-device", device_name="Security browser")
+        with open_db(self.db) as db:
+            web_session = db.execute(
+                "SELECT client_type, device_id FROM sessions WHERE user_id = ?",
+                (auth["user"]["id"],),
+            ).fetchone()
+        self.assertEqual(dict(web_session), {
+            "client_type": "web", "device_id": "web-security-device",
+        })
+        web_bearer_session = app.create_session(
+            self.db, auth["user"]["id"], "web", "web-security-device"
+        )
+
+        _, ios_auth = self.request(
+            "POST", "/api/auth/login",
+            {
+                "client": "ios", "device_id": "ios-security-device",
+                "device_name": "Security iPhone", "email": VALID_ACCOUNT["email"],
+                "password": VALID_ACCOUNT["password"],
+            },
+            csrf=False,
+        )
+        ios_token = ios_auth["access_token"]
+        with self.assertRaises(HTTPError) as error:
+            self.request(
+                "POST", "/api/watchlist", {"symbol": "MSFT"},
+                csrf=False, bearer=web_bearer_session["access_token"],
+            )
+        self.assertEqual(error.exception.code, 401)
+
+        status, changed = self.request(
+            "POST", "/api/auth/change-password",
+            {
+                "current_password": VALID_ACCOUNT["password"],
+                "new_password": "NewPaperTrades2027",
+            },
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(changed["reauth_required"])
+        with self.assertRaises(HTTPError) as error:
+            self.request("GET", "/api/auth/session")
+        self.assertEqual(error.exception.code, 401)
+        with self.assertRaises(HTTPError) as error:
+            self.request("GET", "/api/snapshot", csrf=False, bearer=ios_token)
+        self.assertEqual(error.exception.code, 401)
+        with self.assertRaises(HTTPError) as error:
+            self.request(
+                "POST", "/api/auth/login",
+                {
+                    "client": "web", "device_id": "web-security-device",
+                    "device_name": "Security browser", "email": VALID_ACCOUNT["email"],
+                    "password": VALID_ACCOUNT["password"],
+                },
+                csrf=False,
+            )
+        self.assertEqual(error.exception.code, 401)
+
+        _, fresh = self.request(
+            "POST", "/api/auth/login",
+            {
+                "client": "web", "device_id": "web-security-device",
+                "device_name": "Security browser", "email": VALID_ACCOUNT["email"],
+                "password": "NewPaperTrades2027",
+            },
+            csrf=False,
+        )
+        self.csrf_token = fresh["csrf_token"]
+        _, second_ios = self.request(
+            "POST", "/api/auth/login",
+            {
+                "client": "ios", "device_id": "ios-security-device-2",
+                "device_name": "Second iPhone", "email": VALID_ACCOUNT["email"],
+                "password": "NewPaperTrades2027",
+            },
+            csrf=False,
+        )
+        status, logged_out = self.request(
+            "POST", "/api/auth/logout-all", {"current_password": "NewPaperTrades2027"}
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(logged_out["logged_out_all"])
+        with self.assertRaises(HTTPError) as error:
+            self.request("GET", "/api/snapshot", csrf=False, bearer=second_ios["access_token"])
+        self.assertEqual(error.exception.code, 401)
+
+    def test_login_rate_limit_cannot_be_bypassed_by_changing_email(self):
+        self.register()
+        for index in range(app.LOGIN_ATTEMPT_LIMIT):
+            with self.assertRaises(HTTPError) as error:
+                self.request(
+                    "POST", "/api/auth/login",
+                    {
+                        "client": "web", "device_id": f"web-rate-{index:03d}",
+                        "device_name": "Rate test", "email": f"unknown-{index}@example.com",
+                        "password": "WrongPassword2026",
+                    },
+                    csrf=False,
+                )
+            self.assertEqual(error.exception.code, 401)
+        with self.assertRaises(HTTPError) as error:
+            self.request(
+                "POST", "/api/auth/login",
+                {
+                    "client": "web", "device_id": "web-rate-blocked",
+                    "device_name": "Rate test", "email": "another@example.com",
+                    "password": "WrongPassword2026",
+                },
+                csrf=False,
+            )
+        self.assertEqual(error.exception.code, 429)
+
+    def test_multi_account_reports_are_isolated_and_global_operations_require_owner(self):
+        _, owner = self.register(device_id="web-owner-device", device_name="Owner browser")
+        self.assertEqual(owner["user"]["role"], "owner")
+        self.request("POST", "/api/watchlist", {"symbol": "PLTR"})
+
+        bob_opener = build_opener(HTTPCookieProcessor(CookieJar()))
+
+        def bob_request(method, path, payload=None, csrf_token=""):
+            body = json.dumps(payload).encode() if payload is not None else None
+            headers = {"Content-Type": "application/json"} if body is not None else {}
+            if method not in {"GET", "HEAD"} and csrf_token:
+                headers["X-CSRF-Token"] = csrf_token
+            request = Request(self.base + path, data=body, method=method, headers=headers)
+            with bob_opener.open(request) as response:
+                return response.status, json.load(response)
+
+        bob_payload = {
+            "client": "web", "device_id": "web-bob-device", "device_name": "Bob browser",
+            "display_name": "Bob", "email": "bob@example.com", "password": "BobPaperTrades2026",
+        }
+        with patch.dict(os.environ, {"INVESTORLAB_ALLOW_REGISTRATION": "1"}):
+            _, bob = bob_request("POST", "/api/auth/register", bob_payload)
+        self.assertEqual(bob["user"]["role"], "member")
+        bob_csrf = bob["csrf_token"]
+        bob_request("POST", "/api/watchlist", {"symbol": "SOFI"}, bob_csrf)
+
+        with open_db(self.db) as db:
+            for symbol, base in (("PLTR", 20), ("SOFI", 10)):
+                for offset in range(60):
+                    trading_day = date.today() - timedelta(days=59 - offset)
+                    price = (base + offset) * 1_000_000
+                    db.execute(
+                        "INSERT INTO market_daily VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            symbol, trading_day.isoformat(), price, price, price, price,
+                            1_000_000, "alpha_vantage", now_iso(),
+                        ),
+                    )
+
+        _, health = bob_request("GET", "/api/system/health")
+        self.assertEqual([item["symbol"] for item in health["market_cache"]["symbols"]], ["SOFI"])
+        _, status = bob_request("GET", "/api/market/status")
+        self.assertEqual(status["cached_symbols"], 1)
+        _, readiness = bob_request("GET", "/api/data-sources/readiness")
+        self.assertNotIn("PLTR", json.dumps(readiness))
+        _, quality = bob_request("GET", "/api/data-quality")
+        self.assertEqual([item["symbol"] for item in quality["symbols"]], ["SOFI"])
+        _, scan = bob_request("POST", "/api/scanner/run", {}, bob_csrf)
+        self.assertNotIn("PLTR", json.dumps(scan))
+
+        for method, path, payload in (
+            ("GET", "/api/system/backups", None),
+            ("POST", "/api/market/configure", {"api_key": "ABCDEFGH1234"}),
+            ("POST", "/api/alpaca/paper-account/sync", {}),
+        ):
+            with self.assertRaises(HTTPError) as error:
+                bob_request(method, path, payload, bob_csrf)
+            self.assertEqual(error.exception.code, 403)
+
+    def test_keychain_secrets_are_sent_over_stdin_not_process_arguments(self):
+        result = type("SecurityResult", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+        with patch.object(app.sys, "platform", "darwin"), patch(
+            "app.subprocess.run", return_value=result
+        ) as run:
+            app.configure_market_data({"api_key": "ALPHATEST123"})
+            app.configure_realtime_data({
+                "api_key_id": "ALPACAKEY123", "api_secret_key": "ALPACASECRETKEY123456",
+            })
+        calls = run.call_args_list
+        self.assertEqual(len(calls), 3)
+        for call in calls:
+            command = call.args[0]
+            self.assertNotIn("ALPHATEST123", command)
+            self.assertNotIn("ALPACAKEY123", command)
+            self.assertNotIn("ALPACASECRETKEY123456", command)
+            self.assertTrue(call.kwargs["input"].endswith("\n"))
 
     def test_watchlist_append_only_ledger_and_incremental_sync(self):
         self.register()
@@ -308,6 +538,10 @@ class InvestorLabAPITest(unittest.TestCase):
             )
         self.assertEqual(error.exception.code, 400)
 
+        with self.assertRaises(HTTPError) as error:
+            self.request("GET", "/api/sync?since=9223372036854775808")
+        self.assertEqual(error.exception.code, 400)
+
     def test_ios_bearer_session_does_not_require_csrf(self):
         self.register()
         _, auth = self.request(
@@ -315,6 +549,8 @@ class InvestorLabAPITest(unittest.TestCase):
             "/api/auth/login",
             {
                 "client": "ios",
+                "device_id": "ios-bearer-device",
+                "device_name": "Bearer iPhone",
                 "email": VALID_ACCOUNT["email"],
                 "password": VALID_ACCOUNT["password"],
             },
@@ -332,7 +568,7 @@ class InvestorLabAPITest(unittest.TestCase):
         self.request(
             "POST",
             "/api/devices",
-            {"device_id": "web-profile-test", "name": "Profile browser", "platform": "web"},
+            {"device_id": "web-test-device", "name": "Profile browser", "platform": "web"},
         )
         _, default_profile = self.request("GET", "/api/investor-profile")
         self.assertEqual(default_profile["paper_account_size"], "25000")
@@ -360,7 +596,7 @@ class InvestorLabAPITest(unittest.TestCase):
         self.assertEqual(current["devices"][0]["name"], "Profile browser")
         _, exported = self.request("GET", "/api/export")
         self.assertEqual(exported["format"], "investor-lab-account-export")
-        self.assertEqual(exported["schema_version"], 16)
+        self.assertEqual(exported["schema_version"], 17)
         self.assertIn("plan_reviews", exported)
         self.assertIn("portfolio_imports", exported)
         self.assertEqual(exported["investor_profile"]["daily_loss_limit"], "250")
@@ -398,7 +634,7 @@ class InvestorLabAPITest(unittest.TestCase):
         )
         self.assertEqual(status, 200)
         self.assertEqual(preview["row_count"], 2)
-        self.assertEqual(preview["total_cost"], "488.125")
+        self.assertEqual(preview["total_cost"], "1725.625")
         self.assertEqual(len(preview["fingerprint"]), 64)
 
         status, imported = self.request("POST", "/api/imports/portfolio", payload)
@@ -441,10 +677,10 @@ class InvestorLabAPITest(unittest.TestCase):
         self.assertEqual(health["status"], "attention")
         self.assertEqual(health["database"]["integrity"], "ok")
         self.assertEqual(health["account_counts"]["imports"], 1)
-        self.assertEqual(health["schema_version"], 16)
+        self.assertEqual(health["schema_version"], 17)
 
     def test_removing_device_revokes_only_its_bound_sessions(self):
-        self.register()
+        self.register(device_id="web-primary-device", device_name="Primary browser")
         self.request(
             "POST",
             "/api/devices",
@@ -455,6 +691,8 @@ class InvestorLabAPITest(unittest.TestCase):
             "/api/auth/login",
             {
                 "client": "ios",
+                "device_id": "ios-secondary-device",
+                "device_name": "Test iPhone",
                 "email": VALID_ACCOUNT["email"],
                 "password": VALID_ACCOUNT["password"],
             },
@@ -516,9 +754,16 @@ class InvestorLabAPITest(unittest.TestCase):
                 "5. volume": str(1_000_000 + index),
             }
         provider_payload = {"Time Series (Daily)": series}
+        live_payload = {
+            "latestTrade": {"p": 159.25, "t": "2026-03-01T15:30:00Z"},
+            "latestQuote": {"bp": 159.20, "ap": 159.30},
+            "dailyBar": {"c": 159.25},
+        }
         with patch.dict(os.environ, {"ALPHAVANTAGE_API_KEY": "test-key"}), patch(
             "app.urlopen", return_value=FakeResponse(provider_payload)
-        ) as provider:
+        ) as provider, patch(
+            "app._alpaca_credentials", return_value=("paper-key", "paper-secret", "test")
+        ), patch("app._alpaca_json", return_value=live_payload) as live_provider:
             status, research = self.request(
                 "POST", "/api/market/refresh", {"symbol": "AAPL"}
             )
@@ -535,6 +780,11 @@ class InvestorLabAPITest(unittest.TestCase):
             self.assertEqual(research["range_stats"]["low_close"], "100")
             self.assertEqual(research["range_stats"]["period_return_percent"], "59.00")
             self.assertEqual(research["range_stats"]["max_drawdown_percent"], "0.00")
+            self.assertTrue(research["realtime_quote"]["available"])
+            self.assertEqual(research["realtime_quote"]["latest_price"], "159.25")
+            self.assertEqual(research["realtime_quote"]["bid"], "159.2")
+            self.assertEqual(research["realtime_quote"]["ask"], "159.3")
+            self.assertEqual(research["realtime_quote"]["feed"], "iex")
             self.assertEqual(research["decision"]["signal"], "refresh_required")
             self.assertEqual(research["decision"]["quality"], "stale")
             self.assertGreater(
@@ -544,6 +794,7 @@ class InvestorLabAPITest(unittest.TestCase):
             _, cached = self.request("POST", "/api/market/refresh", {"symbol": "AAPL"})
             self.assertTrue(cached["cache_hit"])
             self.assertEqual(provider.call_count, 1)
+            self.assertEqual(live_provider.call_count, 1)
 
             _, status_data = self.request("GET", "/api/market/status")
             self.assertTrue(status_data["configured"])
@@ -557,6 +808,12 @@ class InvestorLabAPITest(unittest.TestCase):
             self.assertEqual(
                 current["watchlist_research"][0]["state"], "bullish_alignment"
             )
+
+    def test_daily_briefing_explains_when_watchlist_market_data_needs_refresh(self):
+        self.register()
+        self.request("POST", "/api/watchlist", {"symbol": "AAPL"})
+        _, snapshot = self.request("GET", "/api/snapshot")
+        self.assertEqual(snapshot["daily_briefing"]["headline"], "Market evidence needs refresh")
 
     def test_adjusted_daily_refresh_uses_adjusted_ohlc_for_research(self):
         self.register()
@@ -866,7 +1123,8 @@ class InvestorLabAPITest(unittest.TestCase):
         self.assertTrue(response["configured"])
         self.assertEqual(response["configuration_source"], "keychain")
         self.assertNotIn(api_key, json.dumps(response))
-        self.assertIn(api_key, security.call_args.args[0])
+        self.assertNotIn(api_key, security.call_args.args[0])
+        self.assertEqual(security.call_args.kwargs["input"], api_key + "\n")
 
         with self.assertRaises(HTTPError) as error:
             self.request("POST", "/api/market/configure", {"api_key": "bad key"})
@@ -1518,7 +1776,10 @@ class InvestorLabAPITest(unittest.TestCase):
         }
         with patch("app._alpaca_credentials", return_value=("key", "secret", "keychain")), patch(
             "app._alpaca_json", side_effect=[snapshot_payload, bars_payload]
-        ), patch("app._nasdaq_halts", return_value={}):
+        ), patch("app._nasdaq_halts", return_value={}), patch(
+            "app.market_clock",
+            return_value={"session_phase": "regular", "is_open": True, "calendar": []},
+        ):
             status, live = self.request("GET", "/api/day-trade/live/AAPL")
         self.assertEqual(status, 200)
         self.assertTrue(live["available"])
@@ -1587,6 +1848,109 @@ class InvestorLabAPITest(unittest.TestCase):
         self.assertFalse(unavailable["available"])
         self.assertFalse(unavailable["halt"]["halted"])
         self.assertIn("not configured", unavailable["data_scope"])
+
+    def test_live_day_trade_uses_regular_session_and_time_matched_relative_volume(self):
+        self.register()
+        ny = ZoneInfo("America/New_York")
+        session_day = datetime.now(timezone.utc).astimezone(ny).date()
+        prior_day = session_day - timedelta(days=1)
+        while prior_day.weekday() >= 5:
+            prior_day -= timedelta(days=1)
+
+        def stamp(day_value, hour, minute):
+            value = datetime.combine(day_value, time(hour, minute), tzinfo=ny)
+            return value.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+        def bar(day_value, hour, minute, price, volume):
+            return {
+                "t": stamp(day_value, hour, minute), "o": price, "h": price + 1,
+                "l": price - 1, "c": price, "v": volume,
+            }
+
+        bars_payload = {
+            "bars": [
+                bar(prior_day, 8, 0, 99, 10_000),
+                bar(prior_day, 9, 30, 100, 100),
+                bar(prior_day, 9, 34, 101, 100),
+                bar(prior_day, 15, 0, 102, 20_000),
+                bar(session_day, 8, 0, 100, 5_000),
+                bar(session_day, 9, 30, 101, 100),
+                bar(session_day, 9, 34, 102, 100),
+            ]
+        }
+        snapshot_payload = {
+            "latestTrade": {"p": 102}, "latestQuote": {"bp": 101.9, "ap": 102.1},
+            "dailyBar": {"h": 103, "l": 99, "c": 102},
+            "prevDailyBar": {"h": 102, "l": 98, "c": 100},
+        }
+        authoritative_clock = {
+            "available": True, "is_open": True, "session_phase": "regular",
+            "source": "test exchange clock", "calendar": [],
+        }
+        with patch("app._alpaca_credentials", return_value=("key", "secret", "test")), patch(
+            "app._alpaca_json", side_effect=[snapshot_payload, bars_payload]
+        ), patch("app._nasdaq_halts", return_value={}), patch(
+            "app.market_clock", return_value=authoritative_clock
+        ) as clock:
+            _, live = self.request("GET", "/api/day-trade/live/AAPL")
+        self.assertEqual(live["session_volume"], 200)
+        self.assertEqual(live["relative_volume"], "1.00")
+        self.assertEqual(live["session_phase"], "regular")
+        self.assertEqual(live["session_volume_scope"], "regular_session")
+        self.assertEqual(clock.call_count, 1)
+
+    def test_sparse_replay_uses_opening_time_window_instead_of_first_five_bars(self):
+        self.register()
+        ny = ZoneInfo("America/New_York")
+        session_day = datetime.now(timezone.utc).astimezone(ny).date()
+        values = [
+            (9, 30, 100, 101, 99, 100),
+            (9, 32, 100, 102, 100, 101),
+            (9, 34, 101, 102, 100, 101),
+            (9, 35, 102, 104, 102, 103),
+        ]
+        with open_db(self.db) as db:
+            for hour, minute, opening, high, low, close in values:
+                timestamp = datetime.combine(
+                    session_day, time(hour, minute), tzinfo=ny
+                ).isoformat(timespec="seconds")
+                db.execute(
+                    "INSERT INTO intraday_bars VALUES (?, ?, '1Min', ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        "AAPL", timestamp, opening * 1_000_000, high * 1_000_000,
+                        low * 1_000_000, close * 1_000_000, 1_000,
+                        "alpaca_iex", now_iso(),
+                    ),
+                )
+        _, replay = self.request(
+            "GET", f"/api/day-trade/replay/AAPL?date={session_day.isoformat()}"
+        )
+        self.assertTrue(replay["available"])
+        self.assertEqual(replay["opening_range_high"], "102")
+        self.assertEqual(replay["opening_range_low"], "99")
+        self.assertEqual(replay["trigger_index"], 3)
+        self.assertEqual(replay["direction"], "long")
+
+    def test_day_trade_round_trip_uses_new_york_trading_date_after_utc_midnight(self):
+        self.register()
+        ny = ZoneInfo("America/New_York")
+        trading_day = datetime.now(timezone.utc).astimezone(ny).date()
+        executed = datetime.combine(trading_day, time(20, 30), tzinfo=ny).astimezone(timezone.utc)
+        self.request(
+            "POST", "/api/trades",
+            {"symbol": "AAPL", "side": "buy", "quantity": "1", "price": "100"},
+        )
+        self.request(
+            "POST", "/api/trades",
+            {"symbol": "AAPL", "side": "sell", "quantity": "1", "price": "101"},
+        )
+        with open_db(self.db) as db:
+            db.execute(
+                "UPDATE trades SET executed_at = ? WHERE symbol = 'AAPL'",
+                (executed.isoformat(timespec="seconds").replace("+00:00", "Z"),),
+            )
+        _, guardrails = self.request("GET", "/api/day-trade/guardrails")
+        self.assertEqual(guardrails["details"][0]["trading_date"], trading_day.isoformat())
 
     def test_option_chain_snapshots_candidates_and_cache(self):
         self.register()
@@ -1932,6 +2296,8 @@ class InvestorLabAPITest(unittest.TestCase):
         self.assertEqual(risk["gross_exposure"], "700")
         self.assertEqual(risk["positions"][0]["symbol"], "AAPL")
         self.assertEqual(risk["positions"][0]["weight_percent"], "85.71")
+        self.assertEqual(risk["positions"][0]["account_weight_percent"], "2.40")
+        self.assertEqual(risk["sectors"][0]["weight_percent"], "100.00")
         self.assertEqual(risk["live_price_count"], 1)
         self.assertEqual(risk["fallback_price_count"], 1)
 
@@ -1960,6 +2326,70 @@ class InvestorLabAPITest(unittest.TestCase):
                 },
             )
         self.assertEqual(error.exception.code, 400)
+
+    def test_equity_and_option_positions_are_separate_and_options_use_contract_multiplier(self):
+        self.register()
+        self.request(
+            "POST", "/api/trades",
+            {"symbol": "AAPL", "asset_type": "equity", "side": "buy", "quantity": "10", "price": "200"},
+        )
+        self.request(
+            "POST", "/api/trades",
+            {"symbol": "AAPL", "asset_type": "option", "side": "buy", "quantity": "2", "price": "5.5"},
+        )
+        with self.assertRaises(HTTPError) as error:
+            self.request(
+                "POST", "/api/trades",
+                {"symbol": "AAPL", "asset_type": "option", "side": "sell", "quantity": "3", "price": "6.5"},
+            )
+        self.assertEqual(error.exception.code, 400)
+
+        self.request(
+            "POST", "/api/trades",
+            {"symbol": "AAPL", "asset_type": "option", "side": "sell", "quantity": "1", "price": "6.5"},
+        )
+        _, snapshot = self.request("GET", "/api/snapshot")
+        positions = {
+            (item["symbol"], item["asset_type"]): item
+            for item in snapshot["portfolio"]["positions"]
+        }
+        self.assertEqual(positions[("AAPL", "equity")]["quantity"], "10")
+        self.assertEqual(positions[("AAPL", "option")]["quantity"], "1")
+        self.assertEqual(positions[("AAPL", "option")]["realized_pnl"], "100")
+        self.assertEqual(snapshot["portfolio"]["realized_pnl"], "100")
+        self.assertEqual(snapshot["portfolio_performance"]["open_cost_basis"], "2550")
+        self.assertEqual(snapshot["portfolio_performance"]["estimated_cash"], "22550")
+        self.assertEqual(snapshot["portfolio_performance"]["estimated_account_value"], "25100")
+        risk_positions = {
+            (item["symbol"], item["asset_type"]): item
+            for item in snapshot["portfolio_risk"]["positions"]
+        }
+        self.assertEqual(risk_positions[("AAPL", "equity")]["account_weight_percent"], "8.00")
+        self.assertEqual(risk_positions[("AAPL", "option")]["exposure"], "550")
+        self.assertEqual(risk_positions[("AAPL", "option")]["account_weight_percent"], "2.20")
+        self.assertEqual(
+            app._position_value_micros(2_000_000, 5_500_000, "option"),
+            1_100_000_000,
+        )
+
+    def test_option_scenario_is_zero_at_the_quoted_spot_and_uses_extrinsic_decay(self):
+        self.register()
+        _, scenario = self.request(
+            "POST", "/api/options/scenario",
+            {
+                "spot": "100", "days_to_expiration": 30,
+                "quoted_days_to_expiration": 30,
+                "legs": [
+                    {"right": "call", "side": "buy", "strike": "80", "premium": "20.5", "quantity": 1},
+                ],
+            },
+        )
+        unchanged = next(
+            point for point in scenario["payoff_points"]
+            if point["underlying"] == "100.00"
+        )
+        self.assertEqual(unchanged["modeled_pnl"], "0.00")
+        self.assertEqual(scenario["modeled_theta_per_day"], "-0.83")
 
     def test_same_timestamp_uses_insertion_order_per_user(self):
         user, _ = register_user(self.db, VALID_ACCOUNT)
@@ -1995,7 +2425,7 @@ class InvestorLabAPITest(unittest.TestCase):
         self.assertEqual(result["positions"][0]["quantity"], "1")
         self.assertEqual(result["realized_pnl"], "10")
 
-    def test_schema_16_strategy_versions_options_replay_backup_restore_and_health(self):
+    def test_schema_17_strategy_versions_options_replay_backup_restore_and_health(self):
         self.register()
         base_template = {
             "name": "Versioned momentum",
@@ -2085,7 +2515,7 @@ class InvestorLabAPITest(unittest.TestCase):
         _, restored_snapshot = self.request("GET", "/api/snapshot")
         self.assertEqual([item["symbol"] for item in restored_snapshot["watchlist"]], ["AAPL"])
         _, health = self.request("POST", "/api/system/health-check", {})
-        self.assertEqual(health["schema_version"], 16)
+        self.assertEqual(health["schema_version"], 17)
         self.assertEqual(health["database"]["integrity"], "ok")
         self.assertTrue(health["checks"])
 
@@ -2119,7 +2549,7 @@ class InvestorLabAPITest(unittest.TestCase):
         _, synced = self.request("GET", "/api/snapshot")
         self.assertEqual(synced["paper_account"]["provider"], "Alpaca Paper Trading API")
 
-    def test_schema_16_gated_paper_order_lifecycle_and_idempotency(self):
+    def test_schema_17_gated_paper_order_lifecycle_and_idempotency(self):
         self.register()
         paper_payloads = [
             {
@@ -2186,7 +2616,7 @@ class InvestorLabAPITest(unittest.TestCase):
         _, ledger = self.request("GET", "/api/alpaca/paper-orders")
         self.assertEqual(ledger["orders"][0]["status"], "canceled")
 
-    def test_schema_16_scanner_notifications_options_and_command_center(self):
+    def test_schema_17_scanner_notifications_options_and_command_center(self):
         self.register()
         self.request("POST", "/api/watchlist", {"symbol": "AAPL"})
         with open_db(self.db) as db:
@@ -2225,6 +2655,7 @@ class InvestorLabAPITest(unittest.TestCase):
         self.assertEqual(len(scenario["legs"]), 2)
         _, report = self.request("POST", "/api/reports", {"period": "daily"})
         self.assertEqual(report["period"], "daily")
+        self.assertEqual(report["calculation_version"], app.PORTFOLIO_CALCULATION_VERSION)
         _, command = self.request("GET", "/api/research/command-center")
         self.assertEqual(command["counts"]["scanner_presets"], 1)
         self.assertFalse(command["paper_execution"]["real_account_supported"])
@@ -2235,6 +2666,52 @@ class InvestorLabAPITest(unittest.TestCase):
         self.assertIn("no external LLM", copilot["engine"])
         self.request("DELETE", f"/api/scanner-presets/{preset['id']}")
         self.request("DELETE", f"/api/notifications/rules/{rule['id']}")
+
+    def test_every_historical_schema_version_upgrades_to_current(self):
+        seed = Path(self.temp.name) / "migration-seed-v1.sqlite3"
+        with sqlite3.connect(seed) as db:
+            db.executescript(
+                """
+                CREATE TABLE watchlist(symbol TEXT PRIMARY KEY, created_at TEXT NOT NULL);
+                CREATE TABLE trades(
+                    id TEXT PRIMARY KEY,
+                    symbol TEXT NOT NULL,
+                    asset_type TEXT NOT NULL,
+                    side TEXT NOT NULL,
+                    quantity_micros INTEGER NOT NULL,
+                    price_micros INTEGER NOT NULL,
+                    executed_at TEXT NOT NULL
+                );
+                PRAGMA user_version = 1;
+                """
+            )
+
+        snapshots = {1: seed}
+        with sqlite3.connect(seed) as source:
+            for version in range(1, app.SCHEMA_VERSION):
+                migration = getattr(app, f"_migrate_v{version}_to_v{version + 1}")
+                migration(source)
+                snapshot = Path(self.temp.name) / f"migration-seed-v{version + 1}.sqlite3"
+                with sqlite3.connect(snapshot) as destination:
+                    source.backup(destination)
+                snapshots[version + 1] = snapshot
+
+        for source_version, snapshot in snapshots.items():
+            upgraded = Path(self.temp.name) / f"upgraded-from-v{source_version}.sqlite3"
+            with sqlite3.connect(snapshot) as source, sqlite3.connect(upgraded) as destination:
+                source.backup(destination)
+            init_db(upgraded)
+            with self.subTest(source_version=source_version), open_db(upgraded) as db:
+                self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], app.SCHEMA_VERSION)
+                self.assertEqual(db.execute("PRAGMA quick_check").fetchone()[0], "ok")
+                self.assertIn(
+                    "role", {row["name"] for row in db.execute("PRAGMA table_info(users)")}
+                )
+                session_columns = {
+                    row["name"] for row in db.execute("PRAGMA table_info(sessions)")
+                }
+                self.assertIn("device_id", session_columns)
+                self.assertIn("client_type", session_columns)
 
     def test_v1_data_is_archived_then_claimed_by_first_account(self):
         legacy = Path(self.temp.name) / "legacy.sqlite3"
@@ -2262,7 +2739,7 @@ class InvestorLabAPITest(unittest.TestCase):
         init_db(legacy)
         user, _ = register_user(legacy, VALID_ACCOUNT)
         with open_db(legacy) as db:
-            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 16)
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 17)
             self.assertIsNotNone(
                 db.execute("SELECT name FROM sqlite_master WHERE name = 'market_daily'").fetchone()
             )

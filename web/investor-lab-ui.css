@@ -1,7 +1,7 @@
 :root {
   --lab-ink: #17201f;
   --lab-ink-soft: #283331;
-  --lab-muted: #69736f;
+  --lab-muted: #626c68;
   --lab-paper: #f2efe7;
   --lab-card: #fbfaf6;
   --lab-line: rgba(23, 32, 31, .13);
@@ -45,7 +45,7 @@
 .lab-button:active:not(:disabled) { transform: translateY(1px); }
 .lab-button:focus-visible,
 .lab-button.is-focus-demo {
-  outline: 3px solid color-mix(in srgb, var(--lab-focus) 30%, transparent);
+  outline: 3px solid var(--lab-focus);
   outline-offset: 2px;
 }
 .lab-button:disabled,
@@ -73,7 +73,11 @@
 }
 .lab-input:hover:not(:disabled) { border-color: rgba(23, 32, 31, .28); }
 .lab-input:focus,
-.lab-input.is-focus-demo { border-color: var(--lab-focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--lab-focus) 16%, transparent); }
+.lab-input.is-focus-demo {
+  border-color: var(--lab-focus);
+  outline: 3px solid var(--lab-focus);
+  outline-offset: 2px;
+}
 .lab-input[aria-invalid="true"] { border-color: var(--lab-negative); box-shadow: 0 0 0 3px color-mix(in srgb, var(--lab-negative) 12%, transparent); }
 .lab-input:disabled { color: var(--lab-muted); background: rgba(23, 32, 31, .05); }
 .lab-field__helper { color: var(--lab-muted); font: 500 11px/1.4 var(--lab-font-sans); }

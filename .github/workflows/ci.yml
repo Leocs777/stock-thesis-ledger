@@ -4,17 +4,18 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   python:
-    name: Python ${{ matrix.python-version }}
+    name: Python ${{ matrix.python-version }} API and Web tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -22,24 +23,51 @@ jobs:
       matrix:
         python-version: ["3.10", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Compile
-        run: python -m py_compile app.py test_app.py scripts/check-local-links.py
-      - name: Test
-        run: python -m unittest -v
+      - name: Compile Python
+        run: python -m compileall -q app.py test_app.py investor_lab scripts/check-local-links.py
+      - name: Run tests
+        run: python -m unittest -v test_app.py
 
   package:
-    name: Packaging checks
-    runs-on: macos-latest
+    name: Documentation and package checks
+    runs-on: macos-15
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
       - name: Check local Markdown links
         run: python3 scripts/check-local-links.py
       - name: Check shell syntax
         run: zsh -n setup.sh scripts/archive-testflight.sh scripts/reload-local-service.sh
       - name: Check plist syntax
-        run: plutil -lint ios/InvestorLab/Info.plist ios/ExportOptions.plist scripts/org.investorlab.server.plist scripts/org.investorlab.tunnel.plist
+        run: >-
+          plutil -lint
+          ios/InvestorLab/Info.plist
+          ios/ExportOptions.plist
+          scripts/org.investorlab.server.plist
+          scripts/org.investorlab.tunnel.plist
+
+  ios:
+    name: iOS simulator build
+    if: github.event.repository.private == false || github.event_name == 'workflow_dispatch'
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - run: >-
+          xcodebuild
+          -project ios/InvestorLab.xcodeproj
+          -scheme InvestorLab
+          -sdk iphonesimulator
+          -destination 'generic/platform=iOS Simulator'
+          CODE_SIGNING_ALLOWED=NO
+          build

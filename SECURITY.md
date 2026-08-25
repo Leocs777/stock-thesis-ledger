@@ -33,12 +33,17 @@ available, will state their support status in release notes.
 
 ## Security boundary
 
-The reference configuration is a localhost, single-user-oriented deployment.
-It is not a hardened public multi-tenant service.
+The reference configuration is a localhost, local-first deployment. Controlled
+additional accounts are supported, but it is not a hardened public multi-tenant
+service.
 
 - The server binds to `127.0.0.1` by default.
 - Browser sessions use an HttpOnly, SameSite=Strict cookie and CSRF tokens.
 - iOS bearer tokens are stored in a device-only Keychain item.
+- Sessions are bound to their Web or iOS transport and registered device;
+  password rotation and sign-out-all-devices revoke existing sessions.
+- The first account is the local vault owner. Shared provider, broker, backup,
+  restore, and maintenance mutations require that role.
 - SQLite stores salted password hashes and session-token hashes, not plaintext
   passwords or bearer tokens.
 - Provider secrets can be stored in macOS Keychain or supplied through the

@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="A private, local-first workspace for paper trading, market research, and synchronized web and iPhone records.">
   <title>Investor Lab</title>
-  <link rel="icon" href="data:,">
+  <link rel="icon" type="image/png" href="/assets/investor-lab-logo.png">
   <style>
     :root {
       --ink: #17201f;
       --ink-soft: #283331;
-      --muted: #69736f;
+      --muted: #626c68;
       --paper: #f2efe7;
       --paper-deep: #e7e2d7;
       --card: #fbfaf6;
@@ -20,6 +20,7 @@
       --signal-soft: #f8d8cb;
       --positive: #0b7864;
       --negative: #b33c2e;
+      --focus: #0f6f62;
       --sidebar: #15201e;
       --shadow: 0 22px 60px rgba(38, 42, 38, .10);
       --font-sans: "SF Pro", -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
@@ -79,7 +80,9 @@
       background: var(--signal);
       font: 800 13px/1 var(--font-sans);
       transform: rotate(-3deg);
+      overflow: hidden;
     }
+    .brand-mark img { width: 100%; height: 100%; display: block; object-fit: cover; }
     .brand-name { font-weight: 700; letter-spacing: -.02em; }
     .brand-note { color: rgba(255, 255, 255, .48); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }
 
@@ -197,6 +200,9 @@
     .workflow-step small { display: block; margin-top: 5px; color: var(--muted); font-size: 10px; line-height: 1.4; }
     .workflow-context { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 13px; color: var(--muted); font-size: 11px; }
     .workflow-context strong { color: var(--ink); }
+    .section-jump { position: sticky; top: 84px; z-index: 8; display: flex; gap: 7px; margin: 14px 0; padding: 9px; overflow-x: auto; border: 1px solid var(--line); border-radius: 16px; background: rgba(242,239,231,.9); backdrop-filter: blur(14px); }
+    .section-jump button { flex: 0 0 auto; min-height: 36px; border: 1px solid var(--line); border-radius: 999px; padding: 8px 12px; color: var(--ink-soft); background: rgba(255,255,255,.78); font-size: 11px; font-weight: 750; }
+    .section-jump button:hover { color: var(--signal); border-color: rgba(232,93,42,.35); background: white; }
     .command-tools-toggle { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; border: 1px dashed var(--line); border-radius: 16px; background: rgba(255,255,255,.5); }
 
     .grid { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 14px; align-items: start; }
@@ -211,7 +217,7 @@
     label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; font-weight: 700; }
     input, select, textarea { width: 100%; border: 1px solid var(--line); border-radius: 11px; padding: 11px 12px; color: var(--ink); background: white; outline: none; }
     textarea { min-height: 76px; resize: vertical; font: inherit; line-height: 1.45; }
-    input:focus, select:focus, textarea:focus { border-color: var(--signal); box-shadow: 0 0 0 3px rgba(232, 93, 42, .11); }
+    input:focus, select:focus, textarea:focus { border-color: var(--focus); outline: 3px solid var(--focus); outline-offset: 2px; }
     .primary-button { border: 0; border-radius: 11px; padding: 11px 15px; color: white; background: var(--ink); font-weight: 750; }
     .primary-button:hover { background: var(--signal); }
     .watch-form { grid-template-columns: 1fr auto; }
@@ -226,8 +232,9 @@
     .ticker-remove:hover { color: var(--negative); }
     .ticker button:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
     .research-board { display: grid; gap: 8px; margin-top: 14px; }
-    .research-card { width: 100%; display: grid; grid-template-columns: minmax(100px, 1fr) auto auto; align-items: center; gap: 14px; border: 1px solid var(--line); border-radius: 14px; padding: 12px 13px; color: var(--ink); background: rgba(255, 255, 255, .7); text-align: left; }
+    .research-card { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 14px; padding: 8px; color: var(--ink); background: rgba(255, 255, 255, .7); }
     .research-card:hover { border-color: rgba(232, 93, 42, .38); background: white; transform: translateY(-1px); }
+    .research-card__open { min-width: 0; display: grid; grid-template-columns: minmax(100px, 1fr) auto auto; align-items: center; gap: 14px; border: 0; padding: 4px 5px; color: inherit; background: transparent; text-align: left; }
     .research-card strong, .research-card b { display: block; font-variant-numeric: tabular-nums; }
     .research-card small { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; }
     .research-card__price, .research-card__date { text-align: right; }
@@ -297,6 +304,7 @@
     .guard-list li { display: flex; gap: 10px; align-items: flex-start; color: #74402d; font-size: 12px; line-height: 1.4; }
     .guard-list li::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--signal); margin-top: 4px; flex: 0 0 auto; }
     .status-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .market-summary-grid { grid-template-columns: repeat(4, 1fr); }
     .status-box { border: 1px solid var(--line); border-radius: 16px; padding: 16px; background: white; }
     .status-box strong { display: block; margin: 8px 0 3px; font-size: 13px; }
     .status-box p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
@@ -321,11 +329,14 @@
     .payoff-point span { display: block; color: var(--muted); font-size: 9px; }
     .payoff-point strong { display: block; margin-top: 5px; font-size: 11px; font-variant-numeric: tabular-nums; }
     .exposure-list, .entry-list { display: grid; gap: 9px; margin-top: 16px; }
-    .exposure-row { display: grid; grid-template-columns: 100px minmax(0, 1fr) 90px; gap: 12px; align-items: center; padding: 11px 0; border-bottom: 1px solid var(--line); }
+    .exposure-row { display: grid; grid-template-columns: 100px minmax(0, 1fr) minmax(104px, auto); gap: 12px; align-items: center; padding: 11px 0; border-bottom: 1px solid var(--line); }
     .exposure-row:last-child { border-bottom: 0; }
     .exposure-track { height: 7px; overflow: hidden; border-radius: 999px; background: var(--paper-deep); }
     .exposure-fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--positive), var(--signal)); }
     .exposure-row small { color: var(--muted); font-size: 9px; }
+    .exposure-value { text-align: right; }
+    .limit-warning { display: inline-flex; align-items: center; gap: 4px; margin-top: 5px; border: 1px solid rgba(179, 60, 46, .45); border-radius: 999px; padding: 3px 6px; color: #8f2f25; background: #f9e3de; font-size: 9px; font-weight: 800; line-height: 1; white-space: nowrap; }
+    .limit-warning__icon { width: 13px; height: 13px; display: inline-grid; place-items: center; border-radius: 50%; color: white; background: var(--negative); font-size: 9px; }
     .journal-entry { padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: white; }
     .journal-entry-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
     .journal-entry h3 { margin-top: 5px; font-size: 14px; }
@@ -417,13 +428,14 @@
       .nav-icon { width: auto; }
       .content::before { display: none; }
       .topbar { position: relative; min-height: 66px; padding: 14px 16px; }
+      .section-jump { top: 60px; }
       .date-chip { display: none; }
       main { width: min(100% - 24px, 1280px); padding-top: 18px; }
       .hero { min-height: 0; padding: 24px; border-radius: 24px; }
       .hero::after { display: none; }
       .hero-metrics { grid-template-columns: 1fr; }
       .hero-metric { display: flex; }
-      .metric-grid, .grid, .mode-hero, .status-grid, .decision-hero, .decision-evidence, .briefing-summary, .performance-grid, .strategy-lens, .level-grid { grid-template-columns: 1fr; }
+      .metric-grid, .grid, .mode-hero, .status-grid, .market-summary-grid, .decision-hero, .decision-evidence, .briefing-summary, .performance-grid, .strategy-lens, .level-grid { grid-template-columns: 1fr; }
       .workflow-steps { grid-template-columns: 1fr 1fr; }
       .strategy-lens form { grid-template-columns: 1fr 1fr auto; }
       .panel.wide { grid-column: auto; }
@@ -453,11 +465,13 @@
       .planner-form .span-2, .planner-form .span-4 { grid-column: auto; }
       .strategy-lens form { grid-template-columns: 1fr; }
       .workflow-steps { grid-template-columns: 1fr; }
+      .research-card__open { grid-template-columns: 1fr auto; }
+      .research-card__date { display: none; }
       .workflow-step { min-height: 96px; }
       .command-tools-toggle { align-items: flex-start; flex-direction: column; }
       .plan-item { grid-template-columns: 1fr auto; }
       .plan-item > div:nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
-      .exposure-row { grid-template-columns: 78px minmax(0,1fr) 70px; }
+      .exposure-row { grid-template-columns: 78px minmax(0,1fr) minmax(98px, auto); }
       .auth-layout { width: min(100% - 24px, 1120px); }
       .auth-principles { grid-template-columns: 1fr; }
       .auth-card { padding: 23px; border-radius: 22px; }
@@ -471,7 +485,7 @@
   <section class="auth-gate" id="authGate" aria-labelledby="authTitle">
     <div class="auth-layout">
       <div class="auth-story">
-        <div class="brand"><div class="brand-mark">IL</div><div class="brand-copy"><div class="brand-name">Investor Lab</div><div class="brand-note">Local account layer</div></div></div>
+        <div class="brand"><div class="brand-mark"><img src="/assets/investor-lab-logo.png" alt=""></div><div class="brand-copy"><div class="brand-name">Investor Lab</div><div class="brand-note">Local account layer</div></div></div>
         <p class="eyebrow">Private by architecture</p>
         <h1>Your ledger.<br>Your machine.</h1>
         <p class="auth-story-copy">One private account connects the web terminal and iPhone to the same append-only research history. No live-account broker access, no cloud subscription, and no session key stored in browser storage.</p>
@@ -502,7 +516,7 @@
   <div class="shell" id="appShell" inert>
     <aside class="sidebar" aria-label="Primary navigation">
       <div class="brand">
-        <div class="brand-mark">IL</div>
+        <div class="brand-mark"><img src="/assets/investor-lab-logo.png" alt=""></div>
         <div class="brand-copy"><div class="brand-name">Investor Lab</div><div class="brand-note">Private terminal</div></div>
       </div>
       <p class="nav-label">Workspace</p>
@@ -554,6 +568,15 @@
             <article class="metric-card lab-metric" data-tone="positive"><span class="micro-label lab-metric__label">Sync</span><strong class="metric-value lab-metric__value" id="syncMetric">Local</strong><span class="metric-foot lab-metric__foot">Web and iPhone share one ledger</span></article>
           </section>
 
+          <nav class="section-jump" aria-label="Investment sections">
+            <button type="button" data-scroll-target="workflowPanel">Guided workflow</button>
+            <button type="button" data-scroll-target="strategyPanel">Trading strategy</button>
+            <button type="button" data-scroll-target="performancePanel">Paper portfolio performance</button>
+            <button type="button" data-scroll-target="watchlistPanel">Watchlist</button>
+            <button type="button" data-scroll-target="marketEvidencePanel">Market evidence</button>
+            <button type="button" data-scroll-target="decisionPanel">Decision analysis</button>
+          </nav>
+
           <section class="grid">
             <article class="panel wide workflow-panel" id="workflowPanel">
               <div class="panel-head"><div><h2>Guided workflow</h2><p class="panel-subtitle">Complete the core loop first. Advanced research tools stay available without crowding the next action.</p></div><span class="tag warning lab-badge" data-tone="warning">4 STEPS</span></div>
@@ -566,7 +589,7 @@
               <div class="workflow-context"><span>Selected symbol: <strong id="workflowSymbol">None</strong></span><span>Decision: <strong id="workflowDecisionStatus">Not generated</strong></span></div>
             </article>
 
-            <article class="panel wide">
+            <article class="panel wide" id="strategyPanel">
               <div class="panel-head"><div><h2>Trading strategy</h2><p class="panel-subtitle">Choose the research lens saved with new decisions without leaving the Lab.</p></div><span class="tag warning lab-badge" data-tone="warning">Profile</span></div>
               <div class="strategy-lens">
                 <form class="planner-form" id="labStrategyForm">
@@ -628,7 +651,7 @@
               <p class="scenario-line" id="earningsCalendarScope"></p>
             </article>
 
-            <article class="panel wide">
+            <article class="panel wide" id="briefingPanel">
               <div class="panel-head"><div><h2 id="briefingHeadline">Daily action queue</h2><p class="panel-subtitle" id="briefingSummary">Syncing your latest research state.</p></div><span class="tag lab-badge" id="briefingBadge" data-tone="positive">READY</span></div>
               <div class="briefing-summary">
                 <div class="status-box"><span class="micro-label">Needs attention</span><strong id="briefingAttention">0</strong><p>Data, reviews, and thresholds</p></div>
@@ -640,7 +663,7 @@
               <p class="scenario-line" id="briefingScope"></p>
             </article>
 
-            <article class="panel wide">
+            <article class="panel wide" id="performancePanel">
               <div class="panel-head"><div><h2>Paper portfolio performance</h2><p class="panel-subtitle">Open P&amp;L and estimated paper equity from the same append-only ledger.</p></div><span class="tag warning lab-badge" data-tone="warning">EOD estimate</span></div>
               <div class="status-grid performance-grid">
                 <div class="status-box"><span class="micro-label">Account value</span><strong id="performanceEquity">$0.00</strong><p id="performanceCash">$0.00 estimated cash</p></div>
@@ -670,8 +693,8 @@
               <p class="scenario-line" id="screenerScope"></p>
             </article>
 
-            <article class="panel">
-              <div class="panel-head"><div><h2>Watchlist</h2><p class="panel-subtitle">The names waiting for a thesis.</p></div><span class="tag lab-badge" data-tone="positive">Synced</span></div>
+            <article class="panel" id="watchlistPanel">
+              <div class="panel-head"><div><h2>Watchlist</h2><p class="panel-subtitle">Open cached research or refresh one followed ticker directly.</p></div><div class="button-row"><button class="account-chip" id="watchRefreshAllButton" type="button">Refresh all tickers</button><span class="tag lab-badge" data-tone="positive">Synced</span></div></div>
               <form class="watch-form" id="companySearchForm">
                 <label class="lab-field"><span class="lab-field__label">Search companies</span><input class="lab-input" id="companySearchQuery" autocomplete="off" maxlength="80" placeholder="Apple or AAPL" required></label>
                 <button class="secondary-button lab-button" type="submit">Search</button>
@@ -732,7 +755,7 @@
               <p class="scenario-line" id="alertDisclaimer"></p>
             </article>
 
-            <article class="panel wide">
+            <article class="panel wide" id="marketEvidencePanel">
               <div class="panel-head"><div><h2>Daily market evidence</h2><p class="panel-subtitle">End-of-day bars with a transparent 20/50-day structure check.</p></div><span class="tag warning lab-badge" data-tone="warning" id="marketFreshness">Source required</span></div>
               <form class="market-form" id="marketForm">
                 <label class="lab-field"><span class="lab-field__label">Symbol</span><input class="lab-input" id="marketSymbol" autocomplete="off" maxlength="32" placeholder="AAPL" required></label>
@@ -749,9 +772,10 @@
                   <svg class="market-chart" id="marketChart" viewBox="0 0 960 280" role="img" aria-label="Historical daily closing-price and volume chart"></svg>
                   <figcaption class="market-chart-caption"><span id="marketChartCaption">Historical daily closes</span><span>Close · volume</span></figcaption>
                 </figure>
-                <div class="status-grid" style="margin-top:18px">
+                <div class="status-grid market-summary-grid" style="margin-top:18px">
                   <div class="status-box"><span class="micro-label">Structure</span><strong id="marketState">—</strong><p id="marketDate">No date</p></div>
                   <div class="status-box"><span class="micro-label">Latest close</span><strong id="marketClose">—</strong><p id="marketChange">—</p></div>
+                  <div class="status-box"><span class="micro-label">Latest IEX trade</span><strong id="marketLive">—</strong><p id="marketLiveDetail">Configure Alpaca for an observed live price</p></div>
                   <div class="status-box"><span class="micro-label">Moving averages</span><strong id="marketSma">—</strong><p>20-day / 50-day</p></div>
                 </div>
                 <div class="status-grid" style="margin-top:12px">
@@ -767,7 +791,7 @@
               </div>
             </article>
 
-            <article class="panel wide">
+            <article class="panel wide" id="decisionPanel">
               <div class="panel-head"><div><h2>Strategy Lab 4.1</h2><p class="panel-subtitle">Strategy-specific scoring with data gates, outcome validation, and parameter sensitivity.</p></div><span class="tag warning lab-badge" data-tone="warning" id="decisionModelBadge">DECISION-V4.1</span></div>
               <div class="button-row"><button class="primary-button lab-button" id="decisionGenerateButton" type="button">Generate decision</button><span class="scenario-line">Uses cached daily bars, point-in-time SEC filings, your paper-account limits, and current position exposure.</span></div>
               <div class="empty" id="decisionEmpty">Refresh at least 60 daily bars, then generate a decision.</div>
@@ -823,13 +847,14 @@
             <article class="brief-card"><p class="eyebrow">Intraday workspace</p><h1>Plan the exit before the entry.</h1><p>Turn your own entry, invalidation, target, and loss limits into a reviewable worksheet. It remains paper-only and does not invent a live quote or trading signal.</p></article>
             <article class="guard-card"><h2>Pre-trade guardrail</h2><ul class="guard-list"><li>IEX real-time plan with Nasdaq halt checks</li><li>Real-account execution remains blocked</li><li>Daily loss and consecutive-loss stops are visible</li><li>PDT count is an app-ledger estimate</li></ul></article>
           </section>
-          <article class="panel" style="margin-bottom:14px">
+          <nav class="section-jump" aria-label="Day trade sections"><button type="button" data-scroll-target="dayScannerPanel">Watchlist scanner</button><button type="button" data-scroll-target="dayLivePanel">Live market plan</button><button type="button" data-scroll-target="dayGuardPanel">Risk guardrails</button><button type="button" data-scroll-target="dayWorksheetPanel">Risk worksheet</button></nav>
+          <article class="panel" id="dayScannerPanel" style="margin-bottom:14px">
             <div class="panel-head"><div><h2>Watchlist day-trade scanner</h2><p class="panel-subtitle">Ranks saved symbols by gap, relative volume, IEX spread, risk gates, and the three deterministic setups.</p></div><span class="tag warning lab-badge" id="dayScannerBadge" data-tone="warning">NOT RUN</span></div>
             <div class="button-row"><button class="primary-button lab-button" id="dayScannerButton" type="button">Scan watchlist</button><button class="account-chip" id="dayStreamButton" type="button">Start live monitor</button><span class="scenario-line" id="dayMarketClock">Market clock has not loaded.</span></div>
             <div class="compact-list" id="dayScannerRows"><span class="empty">Run the scanner after configuring Alpaca data.</span></div>
             <p class="scenario-line" id="dayScannerScope"></p>
           </article>
-          <article class="panel" style="margin-bottom:14px">
+          <article class="panel" id="dayLivePanel" style="margin-bottom:14px">
             <div class="panel-head"><div><h2>Live premarket plan</h2><p class="panel-subtitle">IEX quote and minute bars, plus Nasdaq's current halt feed. Full SIP data remains optional and paid.</p></div><span class="tag warning lab-badge" id="realtimeBadge" data-tone="warning">SETUP</span></div>
             <form class="planner-form" id="realtimeSetupForm">
               <label><span>Alpaca API key ID</span><input id="alpacaKeyID" type="password" autocomplete="off" required></label>
@@ -843,12 +868,12 @@
             <div class="button-row"><input id="dayReplayDate" type="date"><button class="account-chip" id="dayReplayLoad" type="button">Load minute replay</button></div>
             <div id="dayReplayPlayer" hidden><div class="button-row"><select id="dayReplayTimeframe"><option value="1m">1 minute</option><option value="5m">5 minutes</option><option value="15m">15 minutes</option></select><select id="dayReplaySpeed"><option value="1000">1× speed</option><option value="500">2× speed</option><option value="250">4× speed</option></select><button class="account-chip" id="dayReplayPlay" type="button">Play replay</button></div><svg class="mini-chart" id="dayReplayChart" viewBox="0 0 960 260" role="img" aria-label="Day Trade candlestick replay"></svg><input id="dayReplaySlider" type="range" min="0" max="0" value="0" style="width:100%"><div class="level-grid" id="dayReplayFrame"></div><p class="scenario-line" id="dayReplayPlayerNote"></p></div>
           </article>
-          <article class="panel" style="margin-bottom:14px">
+          <article class="panel" id="dayGuardPanel" style="margin-bottom:14px">
             <div class="panel-head"><div><h2>PDT transition &amp; daily stop monitor</h2><p class="panel-subtitle">Legacy PDT estimate plus current self-recorded loss stops; confirm your broker's margin method.</p></div><span class="tag lab-badge" id="dayGuardBadge" data-tone="positive">CLEAR</span></div>
             <div class="status-grid"><div class="status-box"><span class="micro-label">Estimated day trades</span><strong id="dayTradeCount">0</strong><p id="dayTradeWindow">Five recent weekdays</p></div><div class="status-box"><span class="micro-label">Consecutive losses</span><strong id="dayLossStreak">0</strong><p>Self-recorded reviews</p></div><div class="status-box"><span class="micro-label">Recorded loss today</span><strong id="dayRecordedLoss">$0.00</strong><p id="daySavedLossLimit">Saved daily limit</p></div></div>
             <div class="compact-list" id="dayStopConditions"></div><p class="scenario-line" id="dayGuardScope"></p>
           </article>
-          <article class="panel">
+          <article class="panel" id="dayWorksheetPanel">
             <div class="panel-head"><div><h2>Manual risk worksheet</h2><p class="panel-subtitle">Maximum whole shares are calculated from the risk limits you supply—not recommended by the app.</p></div><span class="tag warning lab-badge" data-tone="warning">No live order</span></div>
             <form class="planner-form" id="dayPlanForm">
               <label><span>Symbol</span><input id="daySymbol" maxlength="32" autocomplete="off" placeholder="AAPL" required></label>
@@ -883,7 +908,8 @@
             <article class="brief-card"><p class="eyebrow">Options laboratory</p><h1>Structure first. Premium second.</h1><p>Inspect indicative chain snapshots, Greeks, IV, and liquidity before comparing a defined-risk payoff.</p></article>
             <article class="guard-card"><h2>Options data gate</h2><ul class="guard-list"><li>Indicative snapshots are observations, not executions</li><li>Liquidity gate checks bid, ask, spread, and volume</li><li>Assignment and early-exercise risk still require review</li><li>Multi-leg execution and broker routing stay disabled</li></ul></article>
           </section>
-          <article class="panel" style="margin-bottom:14px">
+          <nav class="section-jump" aria-label="Options sections"><button type="button" data-scroll-target="optionChainPanel">Option chain</button><button type="button" data-scroll-target="optionCandidates">Strategy candidates</button><button type="button" data-scroll-target="optionWorksheetPanel">Payoff worksheet</button><button type="button" data-scroll-target="optionPlanHistory">Plan history</button></nav>
+          <article class="panel" id="optionChainPanel" style="margin-bottom:14px">
             <div class="panel-head"><div><h2>Option chain explorer</h2><p class="panel-subtitle">Alpaca indicative snapshots with IV, Greeks, expected move, and defined-risk candidates.</p></div><span class="tag warning lab-badge" id="optionChainBadge" data-tone="warning">INDICATIVE</span></div>
             <form class="planner-form" id="optionChainForm"><label><span>Underlying symbol</span><input id="optionChainSymbol" maxlength="32" autocomplete="off" placeholder="AAPL" required></label><label><span>Contract side</span><select id="optionFilterRight"><option value="all">Calls and puts</option><option value="call">Calls</option><option value="put">Puts</option></select></label><label><span>DTE range</span><div class="button-row"><input id="optionMinDTE" type="number" min="0" max="730" value="7"><input id="optionMaxDTE" type="number" min="0" max="730" value="60"></div></label><label><span>Minimum volume</span><input id="optionMinVolume" type="number" min="0" value="1"></label><label><span>Maximum spread %</span><input id="optionMaxSpread" type="number" min="0" max="1000" step="0.1" value="20"></label><label><span>Liquidity</span><select id="optionLiquidOnly"><option value="true">Liquid only</option><option value="false">Show all</option></select></label><button class="primary-button lab-button span-4" type="submit">Load filtered option chain</button></form>
             <div class="status-grid" id="optionChainSummary"></div>
@@ -892,7 +918,7 @@
             <div class="table-wrap" id="optionContractsWrap" hidden><table><thead><tr><th>Contract</th><th>Bid / ask</th><th>IV / delta</th><th>Volume</th><th>Liquidity</th></tr></thead><tbody id="optionContracts"></tbody></table></div>
             <p class="scenario-line" id="optionChainScope">Load a symbol to inspect up to five 1,000-contract pages.</p>
           </article>
-          <article class="panel">
+          <article class="panel" id="optionWorksheetPanel">
             <div class="panel-head"><div><h2>Expiration payoff worksheet</h2><p class="panel-subtitle">Single-leg, vertical, long-volatility, and four-leg condor structures use deterministic expiration math.</p></div><span class="tag warning lab-badge" data-tone="warning">Manual premiums</span></div>
             <form class="planner-form" id="optionPlanForm">
               <label><span>Symbol</span><input id="optionSymbol" maxlength="32" autocomplete="off" placeholder="AAPL" required></label>
@@ -1173,12 +1199,24 @@
               <div class="health-list" id="healthList"><span class="empty">Health check has not run.</span></div>
               <button class="account-chip" id="healthRefreshButton" type="button">Run health check</button>
             </article>
-            <article class="panel">
+            <article class="panel" id="databaseBackupPanel">
               <div class="panel-head"><div><h2>Portable backup</h2><p class="panel-subtitle">Create a verified SQLite snapshot or download readable account JSON.</p></div><span class="tag lab-badge" data-tone="blocked">Local export</span></div>
               <div class="button-row"><button class="primary-button lab-button" id="databaseBackupButton" type="button">Create database backup</button><button class="account-chip" id="exportButton" type="button">Download account export</button></div>
               <p class="scenario-line" id="databaseBackupStatus">Restore stays locked behind an explicit maintenance action so a browser click cannot overwrite the active database.</p>
               <div class="planner-form"><label><span>Verified backup</span><select id="databaseRestoreSelect"><option value="">No backup loaded</option></select></label><label><span>Confirmation</span><input id="databaseRestoreConfirmation" autocomplete="off" placeholder="RESTORE filename"></label><button class="danger-button" id="databaseRestoreButton" type="button">Restore selected backup</button></div>
               <p class="scenario-line">Includes preferences, devices, imports, watchlist, paper ledger, decisions, backtests, plans, journal, alerts, and sync history. Secrets are excluded.</p>
+            </article>
+            <article class="panel">
+              <div class="panel-head"><div><h2>Account security</h2><p class="panel-subtitle">Changing the password or signing out everywhere revokes every Web and iPhone session.</p></div><span class="tag lab-badge" data-tone="positive">All devices</span></div>
+              <form class="planner-form" id="changePasswordForm">
+                <label><span>Current password</span><input id="changePasswordCurrent" type="password" autocomplete="current-password" required></label>
+                <label><span>New password</span><input id="changePasswordNew" type="password" autocomplete="new-password" minlength="12" maxlength="128" required></label>
+                <button class="primary-button lab-button" type="submit">Change password</button>
+              </form>
+              <form class="planner-form" id="logoutAllForm">
+                <label><span>Current password</span><input id="logoutAllPassword" type="password" autocomplete="current-password" required></label>
+                <button class="account-chip" type="submit">Sign out on all devices</button>
+              </form>
             </article>
             <article class="panel danger-panel">
               <div class="panel-head"><div><h2>Delete local account</h2><p class="panel-subtitle">Permanently removes this account and all synchronized records from this server.</p></div><span class="tag" data-tone="negative">Danger zone</span></div>
@@ -1421,13 +1459,16 @@
       "RULE-BASED SETUPS": "规则型交易形态",
       "OPENING-RANGE REPLAY": "开盘区间回放",
       "Data quality": "数据质量",
-      "Decision gate": "决策门槛",
+      "Decision gate": "评分数据状态",
+      "Scoring readiness": "评分就绪状态",
+      "Ready to score": "可以评分",
+      "Needs more data": "需要更多数据",
       "Latest age": "最新数据年龄",
-      "Eligible": "可用于决策",
-      "Blocked": "已阻止",
+      "Eligible": "可计算建议",
+      "Blocked": "数据不足，暂不评分",
       "Raw prices": "未复权价格",
-      "Decision eligible": "可用于决策",
-      "Decision blocked": "已阻止决策",
+      "Decision eligible": "可计算建议",
+      "Decision blocked": "数据不足，暂不评分",
       "Stored outcomes": "已记录结果",
       "Parameter stability": "参数稳定性",
       "Building history": "正在积累历史",
@@ -1447,7 +1488,7 @@
       "Waiting": "等待条件",
       "ready": "就绪",
       "watch": "观察",
-      "blocked": "已阻止",
+      "blocked": "数据不足",
       "Replay sessions": "回放交易日",
       "Target hit rate": "目标命中率",
       "Average R": "平均 R 倍数",
@@ -1530,6 +1571,20 @@
       "Confirm and append": "确认并追加",
       "Cancel": "取消",
       "Connected devices": "已连接设备",
+      "Account security": "账户安全",
+      "Changing the password or signing out everywhere revokes every Web and iPhone session.": "修改密码或全端退出会撤销所有 Web 与 iPhone 会话。",
+      "All devices": "所有设备",
+      "New password": "新密码",
+      "Change password": "修改密码",
+      "Sign out on all devices": "所有设备退出登录",
+      "Password changed. Sign in again.": "密码已修改，请重新登录。",
+      "All devices signed out.": "所有设备均已退出登录。",
+      "New password must be different from the current password.": "新密码必须与当前密码不同。",
+      "Stored timestamp is not valid ISO-8601.": "保存的时间戳不是有效的 ISO-8601 格式。",
+      "Quoted days to expiration cannot be less than remaining days.": "报价时的剩余到期天数不能少于当前剩余天数。",
+      "Sync cursor must be between 0 and 9223372036854775807.": "同步游标必须介于 0 和 9223372036854775807 之间。",
+      "Database backup maintenance is available only to the workspace owner.": "只有工作区所有者可以维护数据库备份。",
+      "Workspace owner only": "仅限工作区所有者",
       "Synced": "已同步",
       "Data health": "数据健康",
       "Run health check": "运行健康检查",
@@ -1831,13 +1886,14 @@
       "Data required": "需要数据",
       "No cached evidence": "暂无缓存证据",
       "Risk actions, opportunities, watch/hold, then missing data; score breaks ties.": "依次按风险操作、机会、观察/持有和缺失数据排序；同级以评分排序。",
-      "Refresh market evidence": "刷新市场证据",
+      "Refresh market evidence": "更新行情并重新评分",
+      "Market evidence needs refresh": "有自选股需要更新行情",
       "Price threshold met": "已达价格阈值",
       "Options plan needs review": "期权计划需要复盘",
       "Complete plan reviews": "完成计划复盘",
       "Review risk items first": "先复盘风险项",
       "New candidates are ready": "新候选标的已就绪",
-      "Workspace is up to date": "工作区已是最新",
+      "Workspace is up to date": "当前没有待处理事项",
       "Derived from your cached end-of-day data, saved thresholds, paper positions, and latest decision runs.": "基于你缓存的日终数据、已保存阈值、模拟持仓和最新决策生成。",
       "Buy candidate": "买入候选",
       "Watch / wait": "观察 / 等待",
@@ -1972,6 +2028,8 @@
       "cached close": "缓存收盘价",
       "cost basis": "成本基础",
       "Exposure appears after a paper position is recorded.": "记录模拟持仓后将显示暴露。",
+      "Over limit": "超出限额",
+      "Over position limit": "超出单一持仓限额",
       "ACTIVE RULES": "有效规则",
       "Waiting for cached close": "等待缓存收盘价",
       "Threshold met": "已达阈值",
@@ -2114,6 +2172,8 @@
       "Five recent weekdays": "最近五个工作日",
       "No orders": "不下单",
       "Request failed": "请求失败",
+      "Signed in, but some workspace panels could not load. Automatic sync will retry.": "已登录，但部分工作区面板暂时无法加载。自动同步将继续重试。",
+      "Sign out failed. You are still signed in; try again.": "退出失败。你仍然处于登录状态，请重试。",
       "Unknown error": "未知错误",
       "Watchlist day-trade scanner": "自选股日内交易扫描器",
       "Ranks saved symbols by gap, relative volume, IEX spread, risk gates, and the three deterministic setups.": "按跳空、相对成交量、IEX 价差、风险门槛和三种确定性形态为自选股排序。",
@@ -2147,7 +2207,7 @@
       "Verified daily backup": "每日已验证备份",
       "Daily and weekly reports": "日报与周报",
       "Running": "运行中",
-      "Blocked": "已阻塞",
+      "Blocked": "数据不足，暂不评分",
       "Enabled": "已启用",
       "Daily market provider required": "需要日线行情数据源",
       "Save an Alpha Vantage key in Settings before automatic daily decisions can run.": "请先在设置中保存 Alpha Vantage 密钥，才能运行自动每日决策。",
@@ -2158,13 +2218,13 @@
       "Save Alpaca Paper/IEX credentials to collect minute bars and indicative option snapshots.": "保存 Alpaca Paper/IEX 凭据以采集分钟 K 线和指示性期权快照。",
       "Paper plans await review": "模拟计划等待复盘",
       "Recent collection needs attention": "近期采集需要处理",
-      "Automatic daily decisions are blocked until an Alpha Vantage key is saved.": "保存 Alpha Vantage 密钥前，自动每日决策处于阻塞状态。",
+      "Automatic daily decisions are blocked until an Alpha Vantage key is saved.": "尚未配置 Alpha Vantage，自动每日评分暂未启用。",
       "Intraday and option collection are paused until Alpaca Paper/IEX credentials are saved.": "保存 Alpaca Paper/IEX 凭据前，日内与期权采集保持暂停。",
       "data source": "数据源",
       "validation gap": "验证缺口",
       "plan review": "计划复盘",
       "collection failure": "采集失败",
-      "Clear blocking setup items, keep one strategy context frozen, and let the local scheduler collect evidence. Missing provider data never counts as a completed sample.": "清除阻塞配置，保持同一策略环境冻结，并让本地调度器持续收集证据。缺失的数据源结果绝不会计为已完成样本。",
+      "Clear blocking setup items, keep one strategy context frozen, and let the local scheduler collect evidence. Missing provider data never counts as a completed sample.": "完成尚未配置的项目，保持同一策略环境不变，并让本地调度器持续收集证据。数据缺失时不会计入已完成样本。",
       "NOT STARTED": "尚未开始",
       "not_started": "尚未开始",
       "collecting": "收集中",
@@ -2305,6 +2365,41 @@
       "Play replay": "播放回放",
       "Pause replay": "暂停回放",
       "Guided workflow": "引导流程",
+      "Investment sections": "投资功能导航",
+      "Day trade sections": "日内功能导航",
+      "Options sections": "期权功能导航",
+      "Market evidence": "市场证据",
+      "Decision analysis": "决策分析",
+      "Watchlist scanner": "自选股扫描",
+      "Live market plan": "实时行情计划",
+      "Risk guardrails": "风险护栏",
+      "Risk worksheet": "风险计划表",
+      "Option chain": "期权链",
+      "Strategy candidates": "策略候选",
+      "Payoff worksheet": "收益计划表",
+      "Plan history": "计划历史",
+      "Open cached research or refresh one followed ticker directly.": "打开已缓存研究，或直接刷新单只自选股。",
+      "Refresh all tickers": "一键刷新全部自选股",
+      "Refresh ticker": "刷新",
+      "Latest IEX trade": "IEX 最新成交价",
+      "Configure Alpaca for an observed live price": "配置 Alpaca 后显示最新 IEX 成交价",
+      "Save Alpaca credentials to show the latest IEX trade price.": "请先保存 Alpaca 凭据，再显示最新 IEX 成交价。",
+      "Alpaca returned no latest IEX trade price.": "Alpaca 未返回最新 IEX 成交价。",
+      "Latest observed IEX trade from Alpaca Basic; it may differ from the consolidated SIP quote.": "该价格是 Alpaca Basic 提供的最新 IEX 观测成交，可能与 SIP 综合行情不同。",
+      "Latest observed trade": "最新观测成交",
+      "Blocked reasons:": "未通过原因：",
+      "Daily + IEX": "日线 + IEX",
+      "Needs refresh": "需要刷新",
+      "regular": "盘中",
+      "premarket": "盘前",
+      "closed": "已收盘",
+      "unknown": "时段未知",
+      "DATA": "数据",
+      "RISK": "风险",
+      "ALERT": "提醒",
+      "OPPORTUNITY": "机会",
+      "FILING": "SEC 申报",
+      "INFO": "信息",
       "Complete the core loop first. Advanced research tools stay available without crowding the next action.": "先完成核心闭环；高级研究工具仍然可用，但不会遮住下一步操作。",
       "4 STEPS": "4 个步骤",
       "Choose a stock": "选择股票",
@@ -2483,6 +2578,8 @@
         [/^(.+) cost basis$/, (_, value) => `成本基础 ${value}`],
         [/^(.+) total P&L$/, (_, value) => `总盈亏 ${value}`],
         [/^(\d+) cached daily bars · (.+) to (.+)$/, (_, count, start, end) => `${count} 根缓存日线 · ${start} 至 ${end}`],
+        [/^(\d+) observations$/, (_, count) => `${count} 根日线`],
+        [/^(\d+) tickers refreshed(?: · (\d+) failed)?\.$/, (_, count, failed) => `${count} 只自选股已刷新${failed ? ` · ${failed} 只失败` : ""}。`],
         [/^(.+) historical daily closing prices from (.+) to (.+), with volume\.$/, (_, symbol, start, end) => `${symbol} 从 ${start} 至 ${end} 的历史日线收盘价与成交量。`],
         [/^(\d+) trading days$/, (_, count) => `${count} 个交易日`],
         [/^([+-]?[\d.]+)% vs prior close$/, (_, value) => `较前收盘价 ${value}%`],
@@ -2636,6 +2733,16 @@
       currentUser = auth.user;
       csrfToken = auth.csrf_token;
       $("accountName").textContent = currentUser.display_name;
+      const owner = currentUser.role === "owner";
+      for (const id of ["databaseBackupButton", "databaseRestoreSelect", "databaseRestoreConfirmation", "databaseRestoreButton"]) {
+        $(id).disabled = !owner;
+      }
+      if (!owner) $("databaseBackupStatus").textContent = "Database backup maintenance is available only to the workspace owner.";
+      for (const form of [$("marketSetupForm"), $("realtimeSetupForm"), $("paperOrderControlForm"), $("paperOrderForm")]) {
+        form.querySelectorAll("input, select, button").forEach(control => { control.disabled = !owner; });
+      }
+      document.querySelectorAll("[data-source-test]").forEach(control => { control.disabled = !owner; });
+      $("dataSourcePaperSync").disabled = !owner;
       $("authGate").hidden = true;
       $("appShell").removeAttribute("inert");
     }
@@ -2696,6 +2803,25 @@
         : t("Not generated");
     }
 
+    async function refreshSymbolResearch(symbol, button, scrollTarget = null) {
+      const normalized = String(symbol || "").trim().toUpperCase();
+      if (!normalized) throw new Error(t("Choose a stock before refreshing evidence."));
+      if (button) button.disabled = true;
+      $("marketSymbol").value = normalized;
+      updateWorkflowContext(normalized);
+      try {
+        const market = await request("/api/market/refresh", { method: "POST", body: JSON.stringify({ symbol: normalized }) });
+        renderMarket(market);
+        if (market.decision) renderDecision(market.decision, []);
+        await refresh();
+        if (scrollTarget) $(scrollTarget)?.scrollIntoView({ behavior: "smooth", block: "start" });
+        notify(`${normalized} evidence refreshed and decision generated.`);
+        return market;
+      } finally {
+        if (button) button.disabled = false;
+      }
+    }
+
     async function runWorkflowResearch(button) {
       const symbol = currentWorkflowSymbol();
       if (!symbol) {
@@ -2704,28 +2830,18 @@
         $("companySearchForm").scrollIntoView({ behavior: "smooth", block: "center" });
         return;
       }
-      button.disabled = true;
-      $("marketSymbol").value = symbol;
-      updateWorkflowContext(symbol);
-      try {
-        const market = await request("/api/market/refresh", { method: "POST", body: JSON.stringify({ symbol }) });
-        renderMarket(market);
-        await request("/api/decisions", { method: "POST", body: JSON.stringify({ symbol }) });
-        await refresh();
-        $("decisionResult").scrollIntoView({ behavior: "smooth", block: "start" });
-        notify(`${symbol} evidence refreshed and decision generated.`);
-      } catch (error) { notify(error.message); }
-      finally { button.disabled = false; }
+      try { await refreshSymbolResearch(symbol, button, "decisionResult"); }
+      catch (error) { notify(error.message); }
     }
 
     function renderWatchlistResearch(items) {
       $("watchResearchBoard").innerHTML = items.length ? items.map(item => {
-        if (!item.available) return `<button class="research-card" type="button" data-research="${safe(item.symbol)}"><span><strong>${safe(item.symbol)}</strong><small>No cached evidence</small></span><span></span><span class="research-card__date">Refresh below</span></button>`;
+        if (!item.available) return `<article class="research-card"><button class="research-card__open" type="button" data-research="${safe(item.symbol)}"><span><strong>${safe(item.symbol)}</strong><small>${safe(t("No cached evidence"))}</small></span><span></span><span class="research-card__date">${safe(t("Needs refresh"))}</span></button><button class="account-chip" type="button" data-refresh-symbol="${safe(item.symbol)}">${safe(t("Refresh ticker"))}</button></article>`;
         const change = Number(item.change_percent);
         const tone = change < 0 ? "negative" : "positive";
         const decision = decisionBySymbol.get(item.symbol);
         const label = decision ? `${decision.signal_label} · ${decision.score ?? "—"}/100` : item.state_label;
-        return `<button class="research-card" type="button" data-research="${safe(item.symbol)}"><span><strong>${safe(item.symbol)}</strong><small>${safe(label)}</small></span><span class="research-card__price"><b>${money(item.latest_close)}</b><small class="${tone}">${change >= 0 ? "+" : ""}${safe(item.change_percent)}%</small></span><span class="research-card__date">${safe(item.trading_date)}</span></button>`;
+        return `<article class="research-card"><button class="research-card__open" type="button" data-research="${safe(item.symbol)}"><span><strong>${safe(item.symbol)}</strong><small>${safe(t(label))}</small></span><span class="research-card__price"><b>${money(item.latest_close)}</b><small class="${tone}">${change >= 0 ? "+" : ""}${safe(item.change_percent)}%</small></span><span class="research-card__date">${safe(item.trading_date)}</span></button><button class="account-chip" type="button" data-refresh-symbol="${safe(item.symbol)}">${safe(t("Refresh ticker"))}</button></article>`;
       }).join("") : "";
     }
 
@@ -3077,7 +3193,7 @@
       $("briefingBadge").textContent = briefing.risk_count ? "RISK FIRST" : briefing.attention_count ? "REVIEW" : "READY";
       $("briefingBadge").dataset.tone = briefing.risk_count ? "negative" : briefing.attention_count ? "warning" : "positive";
       const tone = severity => severity === "critical" ? "negative" : severity === "warning" ? "warning" : severity === "opportunity" ? "positive" : "blocked";
-      $("briefingTasks").innerHTML = briefing.tasks.length ? briefing.tasks.map(item => `<article class="plan-item briefing-item"><div><span class="tag lab-badge" data-tone="${tone(item.severity)}">${safe(item.category.toUpperCase())}</span><p>${safe(item.symbol || "WORKFLOW")}</p></div><div><strong>${safe(item.title)}</strong><p>${safe(item.detail)}</p></div><button class="account-chip" type="button" data-brief-destination="${safe(item.destination)}" data-brief-symbol="${safe(item.symbol || "")}">Open</button></article>`).join("") : `<span class="empty">No action items. Refresh daily bars after the next market close.</span>`;
+      $("briefingTasks").innerHTML = briefing.tasks.length ? briefing.tasks.map(item => `<article class="plan-item briefing-item"><div><span class="tag lab-badge" data-tone="${tone(item.severity)}">${safe(t(item.category.toUpperCase()))}</span><p>${safe(item.symbol || t("WORKFLOW"))}</p></div><div><strong>${safe(t(item.title))}</strong><p>${safe(t(item.detail))}</p></div><button class="account-chip" type="button" data-brief-destination="${safe(item.destination)}" data-brief-category="${safe(item.category)}" data-brief-symbol="${safe(item.symbol || "")}">${safe(t(item.category === "data" ? "Refresh ticker" : "Open"))}</button></article>`).join("") : `<span class="empty">${safe(t("No action items. Refresh daily bars after the next market close."))}</span>`;
       $("briefingScope").textContent = briefing.scope;
     }
 
@@ -3258,10 +3374,15 @@
         translateUI($("marketEmpty"));
         return;
       }
-      $("marketFreshness").textContent = "End of day";
+      const quote = data.realtime_quote || {};
+      $("marketFreshness").textContent = quote.available ? "Daily + IEX" : "End of day";
       $("marketState").textContent = data.state_label;
       $("marketDate").textContent = `${data.symbol} · ${data.trading_date} · ${data.observations} bars`;
       $("marketClose").textContent = money(data.latest_close);
+      $("marketLive").textContent = quote.available ? money(quote.latest_price) : "—";
+      $("marketLiveDetail").textContent = quote.available
+        ? `${t(quote.session_phase || "unknown")} · IEX · ${quote.latest_trade_at ? new Date(quote.latest_trade_at).toLocaleTimeString() : t("Latest observed trade")}`
+        : t(quote.reason || "Configure Alpaca for an observed live price");
       const change = Number(data.change_percent);
       $("marketChange").textContent = `${change >= 0 ? "+" : ""}${data.change_percent}% vs prior close`;
       $("marketChange").className = change < 0 ? "negative" : "positive";
@@ -3279,7 +3400,7 @@
       const quality = data.data_quality;
       $("marketDataQuality").innerHTML = quality ? [
         ["Data quality", `${quality.score}/100`, quality.status],
-        ["Decision gate", quality.decision_eligible ? "Eligible" : "Blocked", `${quality.observations || 0} observations`],
+        ["Scoring readiness", quality.decision_eligible ? "Ready to score" : "Needs more data", `${quality.observations || 0} observations`],
         ["Latest age", `${quality.latest_age_days ?? "—"} days`, quality.price_adjustment === "raw" ? "Raw prices" : quality.price_adjustment]
       ].map(([label, value, detail]) => `<div class="status-box"><span class="micro-label">${safe(t(label))}</span><strong>${safe(t(value))}</strong><p>${safe(t(detail))}</p></div>`).join("") : "";
       $("marketDataQualityNote").textContent = quality ? [...(quality.blockers || []), ...(quality.warnings || [])].join(" ") : "";
@@ -3365,7 +3486,12 @@
       $("riskLabel").textContent = t(risk.concentration_label);
       $("riskPricing").textContent = `${risk.live_price_count} cached close · ${risk.fallback_price_count} cost fallback`;
       $("riskDisclaimer").textContent = risk.disclaimer;
-      $("riskPositions").innerHTML = risk.positions.length ? risk.positions.map(position => `<div class="exposure-row"><div><strong>${safe(position.symbol)}</strong><br><small>${safe(position.sector)} · ${safe(position.reference_source === "cached_daily_close" ? "cached close" : "cost basis")}</small></div><div class="exposure-track" aria-label="${safe(position.symbol)} ${safe(position.weight_percent)} percent"><div class="exposure-fill" style="width:${Math.min(100, Number(position.weight_percent))}%"></div></div><div><strong class="${position.over_max_position ? "negative" : ""}">${safe(position.weight_percent)}%</strong><br><small>${safe(position.account_weight_percent)}% account</small></div></div>`).join("") : `<span class="empty">Exposure appears after a paper position is recorded.</span>`;
+      $("riskPositions").innerHTML = risk.positions.length ? risk.positions.map(position => {
+        const limitWarning = position.over_max_position
+          ? `<span class="limit-warning" role="status" aria-label="${safe(t("Over position limit"))}"><span aria-hidden="true" class="limit-warning__icon">!</span><span aria-hidden="true">${safe(t("Over limit"))}</span></span>`
+          : "";
+        return `<div class="exposure-row"><div><strong>${safe(position.symbol)}</strong><br><small>${safe(position.sector)} · ${safe(position.reference_source === "cached_daily_close" ? "cached close" : "cost basis")}</small></div><div class="exposure-track" aria-label="${safe(position.symbol)} ${safe(position.weight_percent)} percent"><div class="exposure-fill" style="width:${Math.min(100, Number(position.weight_percent))}%"></div></div><div class="exposure-value"><strong class="${position.over_max_position ? "negative" : ""}">${safe(position.weight_percent)}%</strong><br><small>${safe(position.account_weight_percent)}% account</small>${limitWarning}</div></div>`;
+      }).join("") : `<span class="empty">Exposure appears after a paper position is recorded.</span>`;
       $("riskSectors").innerHTML = (risk.sectors || []).length ? risk.sectors.map(item => `<div class="exposure-row"><div><strong>${safe(item.sector)}</strong></div><div class="exposure-track"><div class="exposure-fill" style="width:${Math.min(100, Number(item.weight_percent))}%"></div></div><div><strong>${safe(item.weight_percent)}%</strong><br><small>${money(item.exposure)}</small></div></div>`).join("") : `<span class="empty">Refresh SEC fundamentals to classify sectors.</span>`;
       $("riskStress").innerHTML = (risk.stress_scenarios || []).map(item => `<div class="compact-row"><div><strong>${safe(item.label)}</strong><p>Mechanical scenario</p></div><div>${safe(item.account_impact_percent)}% of paper account</div><strong class="negative">${money(item.estimated_impact)}</strong></div>`).join("");
       $("riskCorrelations").innerHTML = (risk.correlations || []).length ? risk.correlations.map(item => `<div class="compact-row"><div><strong>${safe(item.left)} / ${safe(item.right)}</strong><p>${safe(item.observations)} shared returns</p></div><div>Daily return correlation</div><strong>${safe(item.correlation)}</strong></div>`).join("") : `<span class="empty">At least two positions with 20 overlapping daily returns are required.</span>`;
@@ -3419,7 +3545,7 @@
       $("dayBinding").textContent = analysis.binding_constraint === "max_position" ? "Position cap is binding" : analysis.binding_constraint === "daily_loss_limit" ? "Daily loss cap is binding" : "Per-trade risk is binding";
       $("dayRR").textContent = `${analysis.reward_risk}R`;
       $("dayRRCheck").textContent = analysis.meets_reward_risk_floor ? "Meets your supplied floor" : "Below your supplied floor";
-      const blocked = analysis.blocked_reasons.length ? ` Blocked: ${analysis.blocked_reasons.join(" ")}` : "";
+      const blocked = analysis.blocked_reasons.length ? ` ${t("Blocked reasons:")} ${analysis.blocked_reasons.map(t).join(" ")}` : "";
       $("dayPlanNote").textContent = `${analysis.data_freshness}${blocked} ${analysis.disclaimer}`;
       translateUI($("dayPlanResult"));
     }
@@ -3755,8 +3881,8 @@
       $("paperOrderDailyStop").value = control.daily_loss_limit;
       const controlAcknowledgement = $("paperOrderControlAcknowledged");
       controlAcknowledgement.checked = false;
-      controlAcknowledgement.disabled = !control.enabled;
-      controlAcknowledgement.required = control.enabled;
+      controlAcknowledgement.disabled = currentUser?.role !== "owner" || !control.enabled;
+      controlAcknowledgement.required = currentUser?.role === "owner" && control.enabled;
       $("paperOrderControlMetrics").innerHTML = [
         ["Routing", control.enabled ? "Paper enabled" : "Locked", control.real_account_supported ? "Unexpected" : "Real account blocked"],
         ["Order cap", money(control.max_order_notional), "Per submitted order"],
@@ -3871,7 +3997,8 @@
 
     async function loadCommandCenter() {
       const [command, orders, presets, notifications, intelligence, quality, reports] = await Promise.all([
-        request("/api/research/command-center"), request("/api/alpaca/paper-orders"),
+        request("/api/research/command-center"),
+        currentUser?.role === "owner" ? request("/api/alpaca/paper-orders") : Promise.resolve({ orders: [] }),
         request("/api/scanner-presets"), request("/api/notifications/rules"),
         request("/api/portfolio/intelligence"), request("/api/data-quality"), request("/api/reports")
       ]);
@@ -3887,7 +4014,7 @@
     async function loadSystemHealth() {
       const [health, backups] = await Promise.all([
         request("/api/system/health"),
-        request("/api/system/backups")
+        currentUser?.role === "owner" ? request("/api/system/backups") : Promise.resolve([])
       ]);
       const cache = health.market_cache;
       const backup = health.database.latest_backup;
@@ -3901,20 +4028,20 @@
         ["Database size", byteSize(health.database.size_bytes)],
         ["Market cache", `${cache.symbol_count} symbols · ${cache.bar_count} bars${stale ? ` · ${stale} stale` : ""}`],
         ["Account records", `${health.account_counts.trades} trades · ${health.account_counts.decisions} decisions · ${health.account_counts.imports} imports`],
-        ["Latest backup", backup ? `${backup.filename} · ${new Date(backup.modified_at).toLocaleDateString()}` : "None detected"],
-        ["Backup retention", `${health.database.backup_count || 0} snapshots · keep ${health.database.backup_retention || 30}`],
+        ["Latest backup", health.database.backup_access === "owner_only" ? "Workspace owner only" : backup ? `${backup.filename} · ${new Date(backup.modified_at).toLocaleDateString()}` : "None detected"],
+        ["Backup retention", health.database.backup_access === "owner_only" ? "Workspace owner only" : `${health.database.backup_count || 0} snapshots · keep ${health.database.backup_retention || 30}`],
         ["Collection automation", `${automation.recent_runs.length} recent runs · intraday ${automation.intraday_collection_enabled ? "on" : "off"}`],
         ["Adjusted history", automation.adjusted_history_enabled ? `${cache.adjustment_count || 0} corporate-action rows` : "Raw-price mode"],
         ["Public URL", automation.public_url || "Localhost only"],
         ["Release readiness", `${release.testflight} · ${release.remote_notifications}`],
-        ...((health.checks || []).map(item => [`Check · ${item.key.replaceAll("_", " ")}`, `${item.status.toUpperCase()} · ${item.detail}`]))
-      ].map(([label, value]) => `<div class="health-row"><span>${safe(label)}</span><strong>${safe(value)}</strong></div>`).join("");
+        ...((health.checks || []).map(item => [`Check · ${item.key.replaceAll("_", " ")}`, `${t(item.status.toUpperCase())} · ${t(item.detail)}`]))
+      ].map(([label, value]) => `<div class="health-row"><span>${safe(t(label))}</span><strong>${safe(t(value))}</strong></div>`).join("");
       const selected = $("databaseRestoreSelect").value;
       $("databaseRestoreSelect").innerHTML = `<option value="">${safe(t(backups.length ? "Select a verified backup" : "No backup loaded"))}</option>` + backups.map(item =>
         `<option value="${safe(item.filename)}" ${item.restorable ? "" : "disabled"}>${safe(item.filename)} · v${item.schema_version} · ${safe(byteSize(item.size_bytes))}${item.restorable ? "" : " · unavailable"}</option>`
       ).join("");
       if (backups.some(item => item.restorable && item.filename === selected)) $("databaseRestoreSelect").value = selected;
-      $("databaseRestoreButton").disabled = !backups.some(item => item.restorable);
+      $("databaseRestoreButton").disabled = currentUser?.role !== "owner" || !backups.some(item => item.restorable);
       translateUI($("healthList").parentElement);
       translateUI($("databaseRestoreSelect").parentElement);
     }
@@ -3968,25 +4095,40 @@
 
     async function completeAuthentication(auth) {
       enterSignedIn(auth);
-      await request("/api/devices", { method: "POST", body: JSON.stringify({ device_id: deviceId(), name: "Web browser", platform: "web" }) });
-      await Promise.all([loadMarketStatus(), loadSystemHealth(), loadDataSourceReadiness()]);
-      await refresh();
       clearInterval(syncTimer);
       syncTimer = setInterval(() => {
         if (currentUser && document.visibilityState === "visible") refresh();
       }, 60000);
+
+      const failures = [];
+      try {
+        await request("/api/devices", { method: "POST", body: JSON.stringify({ device_id: deviceId(), name: "Web browser", platform: "web" }) });
+      } catch (error) {
+        if (error.status === 401 || !currentUser) return;
+        failures.push(error);
+      }
+
+      const results = await Promise.allSettled([loadMarketStatus(), loadSystemHealth(), loadDataSourceReadiness(), refresh()]);
+      failures.push(...results.filter(result => result.status === "rejected").map(result => result.reason).filter(error => error?.status !== 401));
+      if (currentUser && failures.length) notify("Signed in, but some workspace panels could not load. Automatic sync will retry.");
     }
 
     async function bootstrapAuth() {
+      let auth;
       try {
-        await completeAuthentication(await request("/api/auth/session"));
+        auth = await request("/api/auth/session");
       } catch (error) {
         if (error.status !== 401) notify(error.message);
         enterSignedOut();
+        return;
       }
+      await completeAuthentication(auth);
     }
 
     document.querySelectorAll(".nav-button").forEach(button => button.addEventListener("click", () => setView(button.dataset.view)));
+    document.querySelectorAll("[data-scroll-target]").forEach(button => button.addEventListener("click", () => {
+      $(button.dataset.scrollTarget)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }));
     document.querySelectorAll("[data-auth-mode]").forEach(button => button.addEventListener("click", () => setAuthMode(button.dataset.authMode)));
     $("appLanguage").value = currentLanguage;
     $("appLanguage").addEventListener("change", event => {
@@ -4000,7 +4142,10 @@
       const submit = $("authSubmit");
       submit.disabled = true;
       try {
-        const payload = { client: "web", email: $("authEmail").value, password: $("authPassword").value };
+        const payload = {
+          client: "web", device_id: deviceId(), device_name: "Web browser",
+          email: $("authEmail").value, password: $("authPassword").value
+        };
         if (authMode === "register") payload.display_name = $("authName").value;
         const auth = await request(`/api/auth/${authMode}`, { method: "POST", body: JSON.stringify(payload) });
         $("authPassword").value = "";
@@ -4010,10 +4155,18 @@
     });
 
     $("accountButton").addEventListener("click", async () => {
-      try { await request("/api/auth/logout", { method: "POST", body: "{}" }); }
-      catch (error) { if (error.status !== 401) notify(error.message); }
-      enterSignedOut();
-      setAuthMode("login");
+      try {
+        await request("/api/auth/logout", { method: "POST", body: "{}" });
+        enterSignedOut();
+        setAuthMode("login");
+      } catch (error) {
+        if (error.status === 401) {
+          enterSignedOut();
+          setAuthMode("login");
+          return;
+        }
+        notify("Sign out failed. You are still signed in; try again.");
+      }
     });
 
     $("watchForm").addEventListener("submit", async event => {
@@ -4098,10 +4251,27 @@
     });
 
     $("watchResearchBoard").addEventListener("click", async event => {
+      const refreshButton = event.target.closest("[data-refresh-symbol]");
+      if (refreshButton) {
+        try { await refreshSymbolResearch(refreshButton.dataset.refreshSymbol, refreshButton, "marketEvidencePanel"); }
+        catch (error) { notify(error.message); }
+        return;
+      }
       const symbol = event.target.closest("[data-research]")?.dataset.research;
       if (!symbol) return;
       try { await openMarketResearch(symbol); }
       catch (error) { notify(error.message); }
+    });
+
+    $("watchRefreshAllButton").addEventListener("click", async event => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      try {
+        const result = await request("/api/decisions/refresh-watchlist", { method: "POST", body: "{}" });
+        await refresh();
+        notify(`${result.market_refreshed} tickers refreshed${result.failed ? ` · ${result.failed} failed` : ""}.`);
+      } catch (error) { notify(error.message); }
+      finally { button.disabled = false; }
     });
 
     $("screenerFilter").addEventListener("change", renderScreenerRows);
@@ -4117,26 +4287,20 @@
       const button = event.target.closest("[data-brief-destination]");
       if (!button) return;
       const destination = button.dataset.briefDestination;
+      const category = button.dataset.briefCategory;
       const symbol = button.dataset.briefSymbol;
       try {
         setView(destination);
-        if (destination === "overview" && symbol) await openMarketResearch(symbol);
+        if (destination === "overview" && symbol && category === "data") await refreshSymbolResearch(symbol, button, "marketEvidencePanel");
+        else if (destination === "overview" && symbol) await openMarketResearch(symbol);
       } catch (error) { notify(error.message); }
     });
 
     $("marketForm").addEventListener("submit", async event => {
       event.preventDefault();
       const button = $("marketRefreshButton");
-      button.disabled = true;
-      try {
-        const data = await request("/api/market/refresh", { method: "POST", body: JSON.stringify({ symbol: $("marketSymbol").value }) });
-        renderMarket(data);
-        if (data.decision) renderDecision(data.decision, []);
-        await Promise.all([loadMarketStatus(), loadFundamentals(data.symbol)]);
-        await refresh();
-        notify(data.cache_hit ? "Showing cached daily bars." : "Daily market bars refreshed.");
-      } catch (error) { notify(error.message); }
-      finally { button.disabled = false; }
+      try { await refreshSymbolResearch($("marketSymbol").value, button); }
+      catch (error) { notify(error.message); }
     });
 
     $("decisionGenerateButton").addEventListener("click", async event => {
@@ -4901,6 +5065,41 @@
         notify(`Restored ${result.filename}; safety backup ${result.safety_backup}.`);
       } catch (error) { notify(error.message); }
       finally { event.currentTarget.disabled = false; }
+    });
+
+    $("changePasswordForm").addEventListener("submit", async event => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const button = form.querySelector("button[type=submit]");
+      button.disabled = true;
+      try {
+        await request("/api/auth/change-password", { method: "POST", body: JSON.stringify({
+          current_password: $("changePasswordCurrent").value,
+          new_password: $("changePasswordNew").value
+        }) });
+        form.reset();
+        enterSignedOut();
+        setAuthMode("login");
+        notify("Password changed. Sign in again.");
+      } catch (error) { notify(error.message); }
+      finally { button.disabled = false; }
+    });
+
+    $("logoutAllForm").addEventListener("submit", async event => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const button = form.querySelector("button[type=submit]");
+      button.disabled = true;
+      try {
+        await request("/api/auth/logout-all", { method: "POST", body: JSON.stringify({
+          current_password: $("logoutAllPassword").value
+        }) });
+        form.reset();
+        enterSignedOut();
+        setAuthMode("login");
+        notify("All devices signed out.");
+      } catch (error) { notify(error.message); }
+      finally { button.disabled = false; }
     });
 
     $("deleteAccountForm").addEventListener("submit", async event => {

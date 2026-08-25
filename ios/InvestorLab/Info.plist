@@ -28,7 +28,7 @@
         <true/>
     </dict>
     <key>NSLocalNetworkUsageDescription</key>
-    <string>Investor Lab connects to your server to sync research and paper trades.</string>
+    <string>Investor Lab connects to your private Mac server to sync research and paper trades.</string>
     <key>UIApplicationSupportsIndirectInputEvents</key>
     <true/>
     <key>UILaunchScreen</key>

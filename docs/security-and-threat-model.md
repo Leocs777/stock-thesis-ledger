@@ -1,13 +1,14 @@
 # Security and threat model
 
-Status: local reference deployment. Last reviewed for the initial open-source
-release.
+Status: local reference deployment. Last reviewed for v0.1.6.
 
 ## Security goals
 
 - Protect the local password, browser session, iOS bearer token, provider keys,
   paper-account data, research history, and backups.
 - Prevent one local account from reading or mutating another account's records.
+- Keep shared provider, Paper-broker, backup, restore, and maintenance controls
+  restricted to the local vault owner.
 - Prevent cross-site browser mutations.
 - Prevent accidental live brokerage routing.
 - Keep secrets and personal data out of source control, logs, exports, and sync.
@@ -54,7 +55,8 @@ idempotency, a synchronized-account check, and local risk limits.
 | --- | --- | --- |
 | Credential disclosure in Git | Broad ignores, placeholders, Keychain/environment storage | A contributor can still paste a secret into a tracked file or screenshot |
 | Password database theft | Scrypt with random per-account salt | Offline guessing remains possible; SQLite is not encrypted |
-| Session theft | Hashed server tokens, HttpOnly cookie, device-only iOS Keychain | Malware, a hostile extension, or insecure transport can steal an active session |
+| Session theft | Hashed server tokens, transport/device binding, global revocation, HttpOnly cookie, device-only iOS Keychain | Malware, a hostile extension, or insecure transport can steal an active session |
+| Privilege misuse | First-account owner role and owner checks on shared mutations | The local owner and host operating-system account remain fully trusted |
 | Cross-site request forgery | SameSite=Strict cookie plus CSRF on browser mutations | A browser or future route can regress if it bypasses shared guards |
 | Cross-account data access | User-scoped queries and route authentication | New queries require explicit authorization tests |
 | Provider-key leakage | Keys stay server-side and are omitted from exports/responses | Process inspection, shell history, logs, or compromised host can expose environment values |

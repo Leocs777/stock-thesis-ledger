@@ -181,6 +181,57 @@ func labLocalized(_ source: String) -> String {
     if source.hasSuffix(" cash") {
         return source.replacingOccurrences(of: " cash", with: " 现金")
     }
+    if source.hasSuffix(" observations"), let count = source.split(separator: " ").first {
+        return "\(count) 根日线"
+    }
+    if source.hasPrefix("Relative volume ") {
+        return source.replacingOccurrences(of: "Relative volume ", with: "相对成交量 ")
+    }
+    if source.hasSuffix(" triggered"), let count = source.split(separator: " ").first {
+        return "\(count) 次触发"
+    }
+    if source.hasSuffix("R average") {
+        return source.replacingOccurrences(of: "R average", with: "R 平均值")
+    }
+    if source.hasPrefix("Bar "), source.contains(" / ") {
+        return source.replacingOccurrences(of: "Bar ", with: "K 线 ")
+    }
+    if source.hasPrefix("H "), source.contains(" · L ") {
+        return source.replacingOccurrences(of: "H ", with: "高 ")
+            .replacingOccurrences(of: " · L ", with: " · 低 ")
+    }
+    if source.hasSuffix(" saved limit") {
+        return source.replacingOccurrences(of: " saved limit", with: " 已保存上限")
+    }
+    if source.hasSuffix(" contracts"), let count = source.split(separator: " ").first {
+        return "\(count) 张合约"
+    }
+    if source.hasSuffix(" calendar days"), let count = source.split(separator: " ").first {
+        return "\(count) 个日历日"
+    }
+    if source.hasSuffix(" expirations"), let count = source.split(separator: " ").first {
+        return "\(count) 个到期日"
+    }
+    if source.hasSuffix(" matched positions"), let count = source.split(separator: " ").first {
+        return "\(count) 个匹配持仓"
+    }
+    if source.hasSuffix(" failed runs"), let count = source.split(separator: " ").first {
+        return "\(count) 次失败任务"
+    }
+    if source.hasPrefix("Minimum "), source.hasSuffix(" days") {
+        return source.replacingOccurrences(of: "Minimum ", with: "最少 ")
+            .replacingOccurrences(of: " days", with: " 天")
+    }
+    if source.hasSuffix(" option snapshots"), let count = source.split(separator: " ").first {
+        return "\(count) 份期权快照"
+    }
+    if source.hasPrefix("Every "), source.hasSuffix(" hours") {
+        return source.replacingOccurrences(of: "Every ", with: "每 ")
+            .replacingOccurrences(of: " hours", with: " 小时")
+    }
+    if source.hasSuffix(" open"), let count = source.split(separator: " ").first {
+        return "\(count) 个进行中"
+    }
     if source.hasPrefix("Drawdown ") {
         return source.replacingOccurrences(of: "Drawdown ", with: "回撤 ")
     }

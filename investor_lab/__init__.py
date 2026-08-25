@@ -1,0 +1,1 @@
+"""Investor Lab domain modules."""
