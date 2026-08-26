@@ -37,6 +37,9 @@ Stock Thesis Ledger 把一次投资判断保存为可复核的记录：输入数
 项目不依赖 LLM、云数据库或第三方 Python 运行时包。没有配置行情服务时，账户、台账、
 工作表和本地计算仍可使用；可选数据源用于补充市场和 SEC 证据。
 
+[查看中英双语项目网站](https://leocs777.github.io/stock-thesis-ledger/zh-CN/)；网站同时提供
+可用于 TestFlight/App Store Connect 的中英文隐私政策和支持页面。
+
 ## v0.1.6 更新
 
 - 股票与期权持仓分开核算，并统一采用每张期权合约 100 股的乘数计算成本、市值、权重、
@@ -247,6 +250,7 @@ xcodebuild \
 - [Paper 验证协议](docs/paper-validation-protocol.md)
 - [安全与威胁模型](docs/security-and-threat-model.md)
 - [发布准备](docs/release-readiness.md)
+- [App Store 隐私与 TestFlight 元数据](docs/app-store-privacy.md)
 - [贡献指南](CONTRIBUTING.md)
 - [安全问题报告](SECURITY.md)
 - [英文免责声明](DISCLAIMER.md) / [中文免责声明](DISCLAIMER.zh-CN.md)

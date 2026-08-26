@@ -1,0 +1,1 @@
+Test the closed research loop: select a ticker, refresh evidence, freeze a Paper plan, and review the outcome. Please report unclear data timestamps, sync gaps, localization issues, or any path that appears to reach live brokerage execution.

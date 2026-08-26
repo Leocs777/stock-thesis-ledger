@@ -8,6 +8,11 @@ is not implemented.
 
 ## TestFlight archive
 
+Run `scripts/check-testflight-readiness.sh` before opening Xcode. It validates
+the privacy manifest, export declaration, checked-in English/Chinese metadata,
+HTTPS privacy/support URLs, version, and build number without uploading
+anything.
+
 Run `scripts/archive-testflight.sh` to create a signed Release archive. Set
 `INVESTORLAB_EXPORT_IPA=1` to also export an App Store Connect IPA. Upload is an
 explicit later step because it changes external App Store Connect state.
@@ -17,6 +22,11 @@ select your development team in Xcode, create the matching App Store Connect
 record, confirm the version/build number, complete privacy metadata, and provide
 the HTTPS server URL used by testers. The checked-in project intentionally has
 no Apple Development Team ID.
+
+The phase-1 copy is under `ios/metadata/`. Read
+[App Store privacy and TestFlight metadata](app-store-privacy.md) before copying
+the privacy answers: a personal server the maintainer cannot access and a
+developer-operated beta server have different disclosure obligations.
 
 ## Notifications
 

@@ -1,0 +1,1 @@
+第一期仅供内部测试，连接由运营者控制的服务端。应用需要 HTTPS Server URL 及该服务端上的测试账户。临时审核地址和凭据只能通过 App Store Connect 审核字段提供，不得提交到代码仓库。所有券商写操作仅限 Alpaca Paper。

@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Stock Thesis Ledger is a local-first, explainable stock research and Paper-only review workspace for Web and iOS.">
+  <title>Stock Thesis Ledger — Evidence before action</title>
+  <link rel="icon" href="assets/investor-lab-logo.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="shell topbar">
+    <a class="brand" href="./"><img src="assets/investor-lab-logo.png" alt=""><span>Stock Thesis Ledger</span></a>
+    <nav class="nav" aria-label="Primary">
+      <a href="#workflow">Workflow</a><a href="#product">Product</a><a href="#trust">Trust</a>
+      <a href="https://github.com/Leocs777/stock-thesis-ledger">GitHub</a>
+      <a class="language" href="zh-CN/" lang="zh-Hans">中文</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="shell hero">
+      <div class="reveal">
+        <div class="eyebrow">Evidence before action</div>
+        <h1>A thesis you can audit later.</h1>
+        <p class="lede">A local-first workspace for stock research, options scenarios, day-trade planning, and Paper-only review. Every decision keeps its evidence, rules, price plan, strategy version, and eventual outcome.</p>
+        <div class="actions">
+          <a class="button primary" href="https://github.com/Leocs777/stock-thesis-ledger#quick-start">Run locally</a>
+          <a class="button secondary" href="#workflow">See the workflow</a>
+        </div>
+      </div>
+      <div class="hero-visual reveal">
+        <img src="assets/github-hero-v1.png" alt="Stock Thesis Ledger Web workspace and iOS companion">
+        <p class="caption">Sanitized product preview with synthetic data.</p>
+      </div>
+    </section>
+
+    <div class="shell paper-banner reveal">
+      <strong>Paper-only by construction.</strong>
+      <span>No live broker endpoint is implemented. Outputs are inspectable research scenarios, not promises or instructions to trade.</span>
+    </div>
+
+    <section class="shell section" id="workflow">
+      <div class="section-head reveal"><div><div class="eyebrow">One closed loop</div><h2>Research, decide, review.</h2></div><p>The product is organized around a four-step ledger instead of a feed of opaque signals. A ticker stays attached to the evidence and review that produced the decision.</p></div>
+      <div class="workflow">
+        <article class="card reveal"><span class="number">01 · SELECT</span><h3>Choose a ticker</h3><p>Build a focused watchlist and inspect timestamped market and filing coverage.</p></article>
+        <article class="card reveal"><span class="number">02 · REFRESH</span><h3>Refresh evidence</h3><p>Recompute deterministic factors only when the required source data is ready.</p></article>
+        <article class="card reveal"><span class="number">03 · PLAN</span><h3>Freeze the plan</h3><p>Record thesis, counter-evidence, entry zone, stop, targets, size, and invalidation.</p></article>
+        <article class="card reveal"><span class="number">04 · REVIEW</span><h3>Grade the outcome</h3><p>Compare the frozen plan with later bars and Paper execution without rewriting history.</p></article>
+      </div>
+    </section>
+
+    <section class="shell section" id="product">
+      <div class="section-head reveal"><div><div class="eyebrow">Shared ledger</div><h2>Web depth. iOS continuity.</h2></div><p>The browser and native SwiftUI companion use the same authenticated SQLite ledger, revision cursor, strategy context, and Paper history.</p></div>
+      <div class="product-shot reveal"><img src="assets/web-overview-preview.jpg" alt="Stock Thesis Ledger overview workspace"></div>
+      <div class="split-shots">
+        <article class="shot reveal"><img src="assets/web-day-trade-preview.jpg" alt="Day-trade planning workspace"><div><h3>Day Trade</h3><p>Market clock, VWAP, opening range, no-trade gates, risk capacity, replay, and review stay separate from long-term scoring.</p></div></article>
+        <article class="shot reveal"><img src="assets/web-options-preview.jpg" alt="Options scenario laboratory"><div><h3>Options Lab</h3><p>Indicative chains, liquidity, Greeks, one-to-six-leg payoff scenarios, defined-risk filters, and Paper review.</p></div></article>
+      </div>
+    </section>
+
+    <section class="shell section" id="trust">
+      <div class="section-head reveal"><div><div class="eyebrow">Trust boundary</div><h2>Deterministic core, visible limits.</h2></div><p>The server owns calculations and mutation validation. AI is not required. Missing or stale evidence blocks actionable classifications instead of being hidden by a confident explanation.</p></div>
+      <div class="trust-grid">
+        <article class="card reveal"><h3>Local-first</h3><p>One Python standard-library server and one SQLite database on a machine you control. No cloud database or paid app backend is required.</p></article>
+        <article class="card reveal"><h3>Versioned reasoning</h3><p>Decision inputs, factor weights, model version, strategy context, evidence, counter-evidence, and invalidation remain replayable.</p></article>
+        <article class="card reveal"><h3>Paper controls</h3><p>Alpaca mutations are fixed to <code>paper-api.alpaca.markets</code> and require enablement, acknowledgements, local limits, and idempotent IDs.</p></article>
+        <article class="card reveal"><h3>Forward validation</h3><p>A 30–60 day campaign tracks coverage, resolved outcomes, plan reviews, intraday sessions, blockers, and protocol deviations.</p></article>
+      </div>
+    </section>
+
+    <section class="shell section">
+      <div class="section-head reveal"><div><div class="eyebrow">Architecture</div><h2>Small enough to understand.</h2></div><p>A modular monolith keeps synchronization and risk rules in one place while Web and iOS remain focused clients.</p></div>
+      <div class="architecture reveal"><span>Web</span><b>→</b><span>Python API</span><b>→</b><span>SQLite ledger</span><b>← iOS</b></div>
+      <div class="terminal reveal"><pre>git clone https://github.com/Leocs777/stock-thesis-ledger.git
+cd stock-thesis-ledger
+./setup.sh
+python3 app.py</pre></div>
+      <p class="fine-print">Python 3.10+ is required. Provider credentials are optional for the interface, but live evidence refresh requires the corresponding provider account. Read the project disclaimer before use.</p>
+    </section>
+  </main>
+
+  <footer><div class="shell footer-grid"><span>AGPL-3.0-only · Stock Thesis Ledger v0.1.6</span><div class="footer-links"><a href="privacy/">Privacy</a><a href="support/">Support</a><a href="https://github.com/Leocs777/stock-thesis-ledger">Source</a></div></div></footer>
+  <script src="site.js"></script>
+</body>
+</html>

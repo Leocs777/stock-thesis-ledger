@@ -224,6 +224,10 @@
 "Get a free personal key" = "获取免费个人密钥";
 "Physical iPhone" = "实体 iPhone";
 "Danger zone" = "危险区";
+"Privacy & support" = "隐私与支持";
+"Privacy policy" = "隐私政策";
+"Open-source support" = "开源项目支持";
+"The open-source maintainer does not receive data from this reference build. Account and research data stay on the Server URL you choose." = "开源维护者不会从此参考版本接收数据。账户和研究数据保存在你选择的 Server URL。";
 "Delete account and all records" = "删除账户和全部记录";
 "Delete account" = "删除账户";
 "Cancel" = "取消";

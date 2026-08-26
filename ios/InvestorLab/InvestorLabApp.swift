@@ -3997,6 +3997,19 @@ private struct SettingsView: View {
                 Section("Physical iPhone") {
                     Text("127.0.0.1 works in the Simulator. On a physical iPhone, use an HTTPS tunnel to the Mac running app.py so the session token is encrypted in transit.")
                 }
+                Section("Privacy & support") {
+                    Link(
+                        "Privacy policy",
+                        destination: URL(string: "https://leocs777.github.io/stock-thesis-ledger/privacy/")!
+                    )
+                    Link(
+                        "Open-source support",
+                        destination: URL(string: "https://leocs777.github.io/stock-thesis-ledger/support/")!
+                    )
+                    Text("The open-source maintainer does not receive data from this reference build. Account and research data stay on the Server URL you choose.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Section("Danger zone") {
                     Button("Delete account and all records", role: .destructive) {
                         showingAccountDeletion = true

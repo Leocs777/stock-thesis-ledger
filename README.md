@@ -38,6 +38,7 @@ third-party Python runtime package. Optional providers add market and filing
 evidence; the journal, worksheets, sync, and paper ledger remain local.
 
 **Start here:** [Run it locally](#quick-start) · [Tour the product](#product-tour) ·
+[Open the bilingual project site](https://leocs777.github.io/stock-thesis-ledger/) ·
 [Read the strategy methodology](docs/strategy-methodology.md) ·
 [Run a Paper validation campaign](docs/paper-validation-protocol.md) ·
 [Understand the safety model](#safety-boundary)
@@ -322,14 +323,22 @@ machine-specific copies and tunnel credentials outside the repository.
 See [Release readiness](docs/release-readiness.md) before building a TestFlight
 archive.
 
+Freeze and inspect a forward Paper-validation campaign from the command line:
+
+```bash
+python3 scripts/paper_validation.py freeze
+python3 scripts/paper_validation.py status
+python3 scripts/paper_validation.py report
+```
+
 ## Test and validate
 
 ```bash
 python3 -m unittest -v
-python3 -m py_compile app.py test_app.py investor_lab/portfolio_math.py
+python3 -m py_compile app.py test_app.py test_paper_validation.py investor_lab/portfolio_math.py scripts/paper_validation.py
 python3 scripts/check-local-links.py
-zsh -n setup.sh scripts/archive-testflight.sh scripts/reload-local-service.sh
-plutil -lint ios/InvestorLab/Info.plist ios/ExportOptions.plist \
+zsh -n setup.sh scripts/archive-testflight.sh scripts/check-testflight-readiness.sh scripts/reload-local-service.sh
+plutil -lint ios/InvestorLab/Info.plist ios/InvestorLab/PrivacyInfo.xcprivacy ios/ExportOptions.plist \
   scripts/org.investorlab.server.plist scripts/org.investorlab.tunnel.plist
 ```
 
@@ -375,6 +384,7 @@ real provider credentials.
 - [Accounts and sync](docs/accounts-and-sync.md)
 - [Component contracts](docs/component-contracts.md)
 - [Release readiness](docs/release-readiness.md)
+- [App Store privacy and TestFlight metadata](docs/app-store-privacy.md)
 - [Historical product architecture notes (Chinese)](docs/stock-investment-app-architecture.md)
 - [Figma local handoff](docs/figma-phase2-local-handoff.md)
 

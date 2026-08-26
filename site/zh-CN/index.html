@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Stock Thesis Ledger 是本地优先、逻辑透明、支持 Web 与 iOS 的股票研究和纯模拟复盘工作区。">
+  <title>Stock Thesis Ledger — 先证据，后行动</title>
+  <link rel="icon" href="../assets/investor-lab-logo.png">
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <header class="shell topbar">
+    <a class="brand" href="./"><img src="../assets/investor-lab-logo.png" alt=""><span>Stock Thesis Ledger</span></a>
+    <nav class="nav" aria-label="主导航"><a href="#workflow">流程</a><a href="#product">产品</a><a href="#trust">可信边界</a><a href="https://github.com/Leocs777/stock-thesis-ledger">GitHub</a><a class="language" href="../" lang="en">EN</a></nav>
+  </header>
+  <main>
+    <section class="shell hero">
+      <div class="reveal"><div class="eyebrow">先证据，后行动</div><h1>今天的判断，日后仍可审查。</h1><p class="lede">一个本地优先的股票研究、期权情景、日内计划与纯模拟复盘工作区。每次决策都保存证据、规则、价格计划、策略版本和最终结果。</p><div class="actions"><a class="button primary" href="https://github.com/Leocs777/stock-thesis-ledger/blob/main/README.zh-CN.md#快速开始">本地运行</a><a class="button secondary" href="#workflow">查看流程</a></div></div>
+      <div class="hero-visual reveal"><img src="../assets/github-hero-v1.png" alt="Stock Thesis Ledger 网页工作区与 iOS 客户端"><p class="caption">已脱敏的合成数据产品预览。</p></div>
+    </section>
+    <div class="shell paper-banner reveal"><strong>架构上只允许 Paper 模拟交易。</strong><span>没有真实券商端点。输出是可审查的研究情景，不是收益承诺或交易指令。</span></div>
+
+    <section class="shell section" id="workflow">
+      <div class="section-head reveal"><div><div class="eyebrow">一个完整闭环</div><h2>研究、决策、复盘。</h2></div><p>产品围绕四步台账组织，而不是输出不透明的信号流。股票代码始终与生成决策的证据和复盘记录关联。</p></div>
+      <div class="workflow">
+        <article class="card reveal"><span class="number">01 · 选择</span><h3>选择股票</h3><p>建立聚焦的自选股，查看带时间戳的行情与申报覆盖。</p></article>
+        <article class="card reveal"><span class="number">02 · 刷新</span><h3>刷新证据</h3><p>只有必需数据满足质量门槛时，才重新计算确定性因子。</p></article>
+        <article class="card reveal"><span class="number">03 · 计划</span><h3>冻结计划</h3><p>记录论点、反证、买入区间、止损、目标、仓位和失效条件。</p></article>
+        <article class="card reveal"><span class="number">04 · 复盘</span><h3>评价结果</h3><p>用后续行情和 Paper 成交对照原计划，不在结果发生后改写历史。</p></article>
+      </div>
+    </section>
+
+    <section class="shell section" id="product">
+      <div class="section-head reveal"><div><div class="eyebrow">共享台账</div><h2>网页深度，iPhone 连续。</h2></div><p>网页和原生 SwiftUI 客户端共享同一个经过身份验证的 SQLite 台账、同步游标、策略上下文和 Paper 历史。</p></div>
+      <div class="product-shot reveal"><img src="../assets/web-overview-preview.jpg" alt="Stock Thesis Ledger 总览工作区"></div>
+      <div class="split-shots">
+        <article class="shot reveal"><img src="../assets/web-day-trade-preview.jpg" alt="日内交易计划工作区"><div><h3>日内计划</h3><p>市场时钟、VWAP、开盘区间、不交易门槛、风险容量、回放和复盘，与长期评分分开。</p></div></article>
+        <article class="shot reveal"><img src="../assets/web-options-preview.jpg" alt="期权情景研究室"><div><h3>期权研究室</h3><p>查看指示性期权链、流动性、Greeks、1–6 腿损益情景、有限风险筛选和 Paper 复盘。</p></div></article>
+      </div>
+    </section>
+
+    <section class="shell section" id="trust">
+      <div class="section-head reveal"><div><div class="eyebrow">可信边界</div><h2>确定性核心，限制透明。</h2></div><p>服务端负责计算与写入校验，不依赖 AI。证据缺失或过期时会阻止可操作分类，而不是用自信措辞掩盖数据问题。</p></div>
+      <div class="trust-grid">
+        <article class="card reveal"><h3>本地优先</h3><p>一套 Python 标准库服务和一个由你控制的 SQLite 数据库，不要求云数据库或付费应用后端。</p></article>
+        <article class="card reveal"><h3>版本化逻辑</h3><p>决策输入、权重、模型版本、策略上下文、证据、反证和失效条件均可回放。</p></article>
+        <article class="card reveal"><h3>Paper 控制</h3><p>Alpaca 写操作固定到 <code>paper-api.alpaca.markets</code>，且必须通过开关、勾选、本地限制与幂等 ID。</p></article>
+        <article class="card reveal"><h3>前瞻验证</h3><p>30–60 天验证活动追踪覆盖率、已解决结果、计划复盘、日内样本、阻塞项与协议偏差。</p></article>
+      </div>
+    </section>
+
+    <section class="shell section"><div class="section-head reveal"><div><div class="eyebrow">架构</div><h2>小到可以真正读懂。</h2></div><p>模块化单体让同步和风险规则集中在一处，Web 与 iOS 保持为专注的客户端。</p></div><div class="architecture reveal"><span>Web</span><b>→</b><span>Python API</span><b>→</b><span>SQLite 台账</span><b>← iOS</b></div><div class="terminal reveal"><pre>git clone https://github.com/Leocs777/stock-thesis-ledger.git
+cd stock-thesis-ledger
+./setup.sh
+python3 app.py</pre></div><p class="fine-print">需要 Python 3.10+。界面可在无数据源密钥时运行，但刷新真实证据需要相应的数据提供商账户。使用前请阅读免责声明。</p></section>
+  </main>
+  <footer><div class="shell footer-grid"><span>AGPL-3.0-only · Stock Thesis Ledger v0.1.6</span><div class="footer-links"><a href="privacy/">隐私</a><a href="support/">支持</a><a href="https://github.com/Leocs777/stock-thesis-ledger">源代码</a></div></div></footer>
+  <script src="../site.js"></script>
+</body>
+</html>

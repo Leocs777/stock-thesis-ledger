@@ -9,6 +9,7 @@
 - Keep Web and iOS sessions active across recoverable panel failures and failed logout requests.
 - Improve Chinese coverage, keyboard focus, muted-text contrast, and non-color risk indicators.
 - Add historical migration coverage through schema 17, GitHub CI, public-repository CodeQL, Dependabot, and the first extracted portfolio domain module.
+- Add a bilingual GitHub Pages project site, immutable Paper-validation baseline/report tooling, and TestFlight privacy/metadata readiness checks.
 
 ## 0.1.5
 

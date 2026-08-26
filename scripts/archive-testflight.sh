@@ -7,6 +7,7 @@ archive_path="$archive_root/InvestorLab.xcarchive"
 export_path="$archive_root/export"
 
 mkdir -p "$archive_root"
+zsh "$project_root/scripts/check-testflight-readiness.sh"
 xcodebuild \
   -project "$project_root/ios/InvestorLab.xcodeproj" \
   -scheme InvestorLab \

@@ -8,6 +8,7 @@ htmlcov/
 .DS_Store
 data/
 build/
+_site/
 DerivedData/
 artifacts/*.sqlite3
 artifacts/*.sqlite3-shm

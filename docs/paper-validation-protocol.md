@@ -1,6 +1,6 @@
 # Paper validation protocol
 
-Status: Stock Thesis Ledger v0.1.0.
+Status: Stock Thesis Ledger v0.1.6.
 
 Use this protocol to test reliability and decision discipline over 30-60
 calendar days before considering any increase in real capital. Passing does not
@@ -18,6 +18,19 @@ Before day 1, record:
 - minimum reward/risk, base cost, data sources, and refresh cadence;
 - entry/exit thresholds, alert rules, and enabled modules; and
 - campaign start date, 30-calendar-day minimum, and planned 60-calendar-day end.
+
+Create the local, immutable baseline before collecting day-1 evidence:
+
+```bash
+python3 scripts/paper_validation.py freeze
+```
+
+The ignored `data/validation/campaign-baseline.json` records the source commit,
+model/freeze protocol, watchlist, planning limits, cadence, and provider-ready
+booleans. It deliberately excludes identity, credentials, server URLs, account
+numbers, positions, and orders. The command refuses to overwrite an existing
+baseline; use a separately named `--output` when a documented parameter change
+starts a new cohort.
 
 Do not tune parameters after seeing results. A necessary change ends the current
 cohort; document the reason and start a separately labeled cohort.
@@ -68,6 +81,19 @@ entry, and module-specific review coverage for any day-trade or options claim.
 If the sample gate is not met by day 60, label the campaign inconclusive rather
 than weakening the gate.
 
+The local operator commands are:
+
+```bash
+python3 scripts/paper_validation.py status
+python3 scripts/paper_validation.py run
+python3 scripts/paper_validation.py report
+```
+
+`status` is read-only. `run` is explicit because it consumes configured
+provider calls and can submit only the already implemented Paper-safe workflow;
+it does not enable Paper orders or bypass their acknowledgements. `report`
+writes timestamped Markdown and JSON evidence under ignored `data/validation/`.
+
 ## 4. Acceptance gates
 
 ### Reliability
@@ -101,7 +127,7 @@ Report, without cherry-picking:
 - conservative/base/permissive sensitivity; and
 - all operational failures and protocol deviations.
 
-There is deliberately no required return or win-rate threshold in v0.1.0.
+There is deliberately no required return or win-rate threshold in v0.1.6.
 Reliability, data integrity, and process adherence must be established before a
 performance hypothesis is evaluated on a larger, separately frozen sample.
 

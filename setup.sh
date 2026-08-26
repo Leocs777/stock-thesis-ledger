@@ -13,15 +13,15 @@ python3 -c 'import sys; sys.exit("Error: Python 3.10 or newer is required.") if 
 
 mkdir -p data
 
-python3 -m py_compile app.py test_app.py scripts/check-local-links.py
+python3 -m py_compile app.py test_app.py test_paper_validation.py scripts/check-local-links.py scripts/check_app_store_metadata.py scripts/paper_validation.py
 python3 scripts/check-local-links.py
 
 if command -v zsh >/dev/null 2>&1; then
-    zsh -n setup.sh scripts/archive-testflight.sh scripts/reload-local-service.sh
+    zsh -n setup.sh scripts/archive-testflight.sh scripts/check-testflight-readiness.sh scripts/reload-local-service.sh
 fi
 
 if command -v plutil >/dev/null 2>&1; then
-    plutil -lint ios/InvestorLab/Info.plist ios/ExportOptions.plist scripts/org.investorlab.server.plist scripts/org.investorlab.tunnel.plist
+    plutil -lint ios/InvestorLab/Info.plist ios/InvestorLab/PrivacyInfo.xcprivacy ios/ExportOptions.plist scripts/org.investorlab.server.plist scripts/org.investorlab.tunnel.plist
 fi
 
 printf '\n%s\n' "Investor Lab bootstrap checks passed."

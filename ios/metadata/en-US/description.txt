@@ -1,0 +1,15 @@
+Stock Thesis Ledger is a local-first companion for reproducible stock research and Paper-only review.
+
+Use one shared ledger to:
+• refresh timestamped market and SEC evidence;
+• inspect deterministic factor scores and data-quality gates;
+• record thesis, counter-evidence, invalidation, entry zone, stop, targets, and size;
+• explore defined-risk option scenarios;
+• prepare day-trade plans with VWAP, opening-range, and no-trade checks; and
+• review later outcomes without rewriting the original decision.
+
+The iPhone app connects to a server URL you choose. It shares the same authenticated watchlist, decision history, Paper ledger, and revision history as the Web workspace. Login tokens stay in the device Keychain.
+
+Broker mutations in this build are restricted to Alpaca Paper and remain behind explicit controls and local risk limits. No live brokerage endpoint is implemented.
+
+Stock Thesis Ledger is research and paper-trading software, not investment, legal, tax, or accounting advice. Data can be delayed, incomplete, or indicative. Outputs do not promise returns or instruct you to buy or sell.

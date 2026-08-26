@@ -11,6 +11,7 @@
 		A30000000000000000000001 /* SecureTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000002 /* SecureTokenStore.swift */; };
 		A40000000000000000000001 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000002 /* Localizable.strings */; };
 		A50000000000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000002 /* Assets.xcassets */; };
+		A60000000000000000000001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000002 /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -21,6 +22,7 @@
 		A30000000000000000000002 /* SecureTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureTokenStore.swift; sourceTree = "<group>"; };
 		A40000000000000000000002 /* Localizable.strings */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		A50000000000000000000002 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A60000000000000000000002 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -49,6 +51,7 @@
 				A30000000000000000000002 /* SecureTokenStore.swift */,
 				A40000000000000000000002 /* Localizable.strings */,
 				A50000000000000000000002 /* Assets.xcassets */,
+				A60000000000000000000002 /* PrivacyInfo.xcprivacy */,
 				A10000000000000000000003 /* Info.plist */,
 			);
 			path = InvestorLab;
@@ -113,6 +116,7 @@
 			files = (
 				A40000000000000000000001 /* Localizable.strings in Resources */,
 				A50000000000000000000001 /* Assets.xcassets in Resources */,
+				A60000000000000000000001 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

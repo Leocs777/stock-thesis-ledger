@@ -30,9 +30,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Compile Python
-        run: python -m compileall -q app.py test_app.py investor_lab scripts/check-local-links.py
+        run: python -m compileall -q app.py test_app.py test_paper_validation.py investor_lab scripts
       - name: Run tests
-        run: python -m unittest -v test_app.py
+        run: python -m unittest -v
 
   package:
     name: Documentation and package checks
@@ -45,14 +45,19 @@ jobs:
       - name: Check local Markdown links
         run: python3 scripts/check-local-links.py
       - name: Check shell syntax
-        run: zsh -n setup.sh scripts/archive-testflight.sh scripts/reload-local-service.sh
+        run: >-
+          zsh -n setup.sh scripts/archive-testflight.sh
+          scripts/check-testflight-readiness.sh scripts/reload-local-service.sh
       - name: Check plist syntax
         run: >-
           plutil -lint
           ios/InvestorLab/Info.plist
+          ios/InvestorLab/PrivacyInfo.xcprivacy
           ios/ExportOptions.plist
           scripts/org.investorlab.server.plist
           scripts/org.investorlab.tunnel.plist
+      - name: Check TestFlight metadata
+        run: scripts/check-testflight-readiness.sh
 
   ios:
     name: iOS simulator build

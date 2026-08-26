@@ -1,0 +1,1 @@
+Phase 1 is intended for internal testing on an operator-controlled server. The app requires an HTTPS Server URL and a test account created on that server. Supply the temporary review URL and credentials only through App Store Connect review fields; never commit them to this repository. All broker write operations are Alpaca Paper-only.
