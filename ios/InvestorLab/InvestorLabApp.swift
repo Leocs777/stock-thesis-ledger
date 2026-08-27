@@ -3013,6 +3013,10 @@ private struct CommandCenterView: View {
                     LabMetricCard(label: "Symbols", value: "\(quality.summary.symbols)", detail: "\(quality.summary.dailyBars) bars")
                     LabMetricCard(label: "Stale", value: "\(quality.summary.staleSymbols)", detail: "\(quality.summary.recentFailedRuns) failed runs")
                 }
+                HStack(spacing: 10) {
+                    LabMetricCard(label: "Missing intraday minutes", value: "\(quality.summary.intradayMissingMinutes ?? 0)", detail: "\(quality.summary.partialIntradaySessions ?? 0) partial sessions")
+                    LabMetricCard(label: "Option quote warnings", value: "\((quality.summary.optionCrossedMarkets ?? 0) + (quality.summary.optionWideSpreads ?? 0))", detail: "Crossed and wide markets")
+                }
             }
             ForEach(store.researchReports.prefix(10)) { report in
                 HStack {
@@ -5552,6 +5556,7 @@ private final class LabStore: ObservableObject {
             systemHealth = try await request(
                 path: "/api/system/health", method: "GET", body: Optional<WatchPayload>.none
             )
+            if let notice = auth.securityNotice { errorMessage = labLocalized(notice) }
             return true
         } catch {
             errorMessage = error.localizedDescription
@@ -5911,10 +5916,12 @@ private struct UserProfile: Decodable {
 private struct AuthResponse: Decodable {
     let user: UserProfile
     let accessToken: String?
+    let securityNotice: String?
 
     enum CodingKeys: String, CodingKey {
         case user
         case accessToken = "access_token"
+        case securityNotice = "security_notice"
     }
 }
 
@@ -8966,11 +8973,19 @@ private struct CommandDataQualitySummary: Decodable {
     let dailyBars: Int
     let staleSymbols: Int
     let recentFailedRuns: Int
+    let intradayMissingMinutes: Int?
+    let partialIntradaySessions: Int?
+    let optionCrossedMarkets: Int?
+    let optionWideSpreads: Int?
     enum CodingKeys: String, CodingKey {
         case symbols
         case dailyBars = "daily_bars"
         case staleSymbols = "stale_symbols"
         case recentFailedRuns = "recent_failed_runs"
+        case intradayMissingMinutes = "intraday_missing_minutes"
+        case partialIntradaySessions = "partial_intraday_sessions"
+        case optionCrossedMarkets = "option_crossed_markets"
+        case optionWideSpreads = "option_wide_spreads"
     }
 }
 

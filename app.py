@@ -37,6 +37,22 @@ from investor_lab.portfolio_math import (
     calculate_positions,
     position_value_micros as _position_value_micros,
 )
+from investor_lab.api_contract import API_CONTRACT_VERSION, contract_document
+from investor_lab.market_quality import (
+    assess_daily_bars,
+    compare_prices,
+    intraday_coverage,
+    option_snapshot_quality,
+)
+from investor_lab.security import (
+    CONTENT_SECURITY_POLICY,
+    RequestRateLimiter,
+    append_security_event,
+    client_address,
+    identity_hash,
+    read_security_events,
+    record_login_event,
+)
 
 
 def _configure_tls_ca_environment(
@@ -62,7 +78,7 @@ OCC_OPTION_RE = re.compile(r"^([A-Z]{1,6})(\d{6})([CP])(\d{8})$")
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
 SCHEMA_VERSION = 17
-APP_VERSION = "0.1.6"
+APP_VERSION = "0.2.0"
 DECISION_MODEL_VERSION = "decision-v4.1"
 STRATEGY_FREEZE_PROTOCOL = "full-context-v1"
 PORTFOLIO_CALCULATION_VERSION = "portfolio-v2-option-contract-multiplier"
@@ -71,13 +87,17 @@ LOGIN_WINDOW_MINUTES = 15
 LOGIN_ATTEMPT_LIMIT = 8
 PASSWORD_HASH_SEMAPHORE = threading.BoundedSemaphore(4)
 STATIC_ASSETS = {
+    "/assets/app.css": ("app.css", "text/css; charset=utf-8"),
+    "/assets/app.js": ("app.js", "text/javascript; charset=utf-8"),
+    "/assets/design-system.css": ("design-system.css", "text/css; charset=utf-8"),
+    "/assets/design-system.js": ("design-system.js", "text/javascript; charset=utf-8"),
     "/assets/investor-lab-ui.css": ("investor-lab-ui.css", "text/css; charset=utf-8"),
     "/assets/investor-lab-ui.js": ("investor-lab-ui.js", "text/javascript; charset=utf-8"),
     "/assets/investor-lab-logo.png": ("investor-lab-logo.png", "image/png"),
 }
-ALPHA_VANTAGE_KEYCHAIN_SERVICE = "com.leochen.investorlab.alpha-vantage"
-ALPACA_KEY_ID_KEYCHAIN_SERVICE = "com.leochen.investorlab.alpaca-key-id"
-ALPACA_SECRET_KEYCHAIN_SERVICE = "com.leochen.investorlab.alpaca-secret-key"
+ALPHA_VANTAGE_KEYCHAIN_SERVICE = "org.investorlab.alpha-vantage"
+ALPACA_KEY_ID_KEYCHAIN_SERVICE = "org.investorlab.alpaca-key-id"
+ALPACA_SECRET_KEYCHAIN_SERVICE = "org.investorlab.alpaca-secret-key"
 NEW_YORK = ZoneInfo("America/New_York")
 DB_MAINTENANCE_LOCK = threading.Lock()
 SCHEDULER_STATE: dict[str, Any] = {
@@ -93,9 +113,12 @@ class InputError(ValueError):
 
 
 class ApiError(Exception):
-    def __init__(self, status: int, message: str):
+    def __init__(
+        self, status: int, message: str, headers: dict[str, str] | None = None
+    ):
         super().__init__(message)
         self.status = status
+        self.headers = headers or {}
 
 
 def now_iso() -> str:
@@ -1077,6 +1100,18 @@ def login_user(path: Path, payload: dict[str, Any], address: str) -> tuple[dict[
             ).fetchall()
         }
         if any(counts.get(key, 0) >= LOGIN_ATTEMPT_LIMIT for key in rate_keys):
+            record_login_event(
+                path,
+                successful=False,
+                user_id=str(row["id"]) if (row := db.execute(
+                    "SELECT id FROM users WHERE email = ?", (email,)
+                ).fetchone()) else None,
+                email=email,
+                address=address,
+                device_id=device_id,
+                client_type=client_type,
+                rate_limited=True,
+            )
             raise ApiError(429, "Too many login attempts. Try again later.")
         row = db.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
     salt = bytes(row["password_salt"]) if row else b"InvestorLabAuth!"
@@ -1089,6 +1124,15 @@ def login_user(path: Path, payload: dict[str, Any], address: str) -> tuple[dict[
                 "INSERT INTO failed_logins(key_hash, attempted_at) VALUES (?, ?)",
                 [(key, attempted_at) for key in rate_keys],
             )
+        record_login_event(
+            path,
+            successful=False,
+            user_id=str(row["id"]) if row else None,
+            email=email,
+            address=address,
+            device_id=device_id,
+            client_type=client_type,
+        )
         raise ApiError(401, "Invalid email or password.")
     assert row is not None
     user = _serialize_user(row)
@@ -1097,7 +1141,20 @@ def login_user(path: Path, payload: dict[str, Any], address: str) -> tuple[dict[
             "DELETE FROM failed_logins WHERE key_hash IN (?, ?)",
             (email_key, pair_key),
         )
-    return user, create_session(path, user["id"], client_type, device_id, device_name)
+    login_security = record_login_event(
+        path,
+        successful=True,
+        user_id=user["id"],
+        email=email,
+        address=address,
+        device_id=device_id,
+        client_type=client_type,
+    )
+    session = create_session(path, user["id"], client_type, device_id, device_name)
+    session["unusual_login"] = login_security["unusual_login"]
+    if login_security["security_notice"]:
+        session["security_notice"] = login_security["security_notice"]
+    return user, session
 
 
 def create_session(
@@ -3419,6 +3476,10 @@ def system_health(path: Path, user_id: str) -> dict[str, Any]:
     stale_count = sum(bool(item["is_stale"]) for item in symbols)
     alpha_key, alpha_source = _alpha_vantage_api_key()
     alpaca_key, alpaca_secret, alpaca_source = _alpaca_credentials()
+    security_audit = read_security_events(path, user_id=user_id, limit=100)
+    unusual_logins = sum(bool(item.get("unusual")) for item in security_audit["events"])
+    gateway_mode = os.environ.get("INVESTORLAB_ACCESS_GATEWAY", "").lower()
+    gateway_ready = gateway_mode != "cloudflare" or os.environ.get("INVESTORLAB_TRUST_PROXY") == "1"
     checks = [
         {"key": "database", "status": "pass" if quick_check == "ok" else "fail", "detail": f"SQLite quick_check: {quick_check}."},
         {
@@ -3439,6 +3500,22 @@ def system_health(path: Path, user_id: str) -> dict[str, Any]:
         {"key": "public_url", "status": "pass" if os.environ.get("INVESTORLAB_PUBLIC_URL", "").strip() else "attention", "detail": "Stable HTTPS URL configured." if os.environ.get("INVESTORLAB_PUBLIC_URL", "").strip() else "No public URL configured."},
         {"key": "paper_account", "status": "pass" if paper_snapshot else "attention", "detail": f"Latest read-only paper snapshot: {paper_snapshot['fetched_at']}." if paper_snapshot else "Paper account has not been synchronized."},
         {"key": "paper_order_routing", "status": "pass", "detail": "Alpaca Paper routing is enabled behind explicit acknowledgement and local limits." if paper_control["enabled"] else "Alpaca Paper routing is safely locked."},
+        {
+            "key": "security_audit",
+            "status": "pass" if security_audit["invalid_lines"] == 0 else "attention",
+            "detail": f"{len(security_audit['events'])} recent events; {unusual_logins} unusual successful logins; {security_audit['invalid_lines']} invalid audit lines.",
+        },
+        {
+            "key": "access_gateway",
+            "status": "pass" if gateway_ready else "fail",
+            "detail": (
+                "Cloudflare Access identity binding is active."
+                if gateway_mode == "cloudflare" and gateway_ready
+                else "Cloudflare Access requires INVESTORLAB_TRUST_PROXY=1."
+                if gateway_mode == "cloudflare"
+                else "Direct local authentication is active."
+            ),
+        },
     ]
     return {
         "app_version": APP_VERSION,
@@ -3472,6 +3549,12 @@ def system_health(path: Path, user_id: str) -> dict[str, Any]:
             "recent_runs": collection_runs,
             "scheduled_backup_enabled": True,
             "scheduled_reports_enabled": True,
+        },
+        "security_audit": {
+            "recent_event_count": len(security_audit["events"]),
+            "unusual_login_count": unusual_logins,
+            "invalid_line_count": security_audit["invalid_lines"],
+            "gateway_mode": gateway_mode or "local",
         },
         "checks": checks,
         "paper_account": dict(paper_snapshot) if paper_snapshot else None,
@@ -5677,7 +5760,8 @@ def data_quality_center(path: Path, user_id: str) -> dict[str, Any]:
         market = (
             db.execute(
                 f"SELECT symbol, COUNT(*) AS bars, MIN(trading_date) AS first_date, "
-                f"MAX(trading_date) AS latest_date, MAX(fetched_at) AS fetched_at "
+                f"MAX(trading_date) AS latest_date, MAX(fetched_at) AS fetched_at, "
+                f"GROUP_CONCAT(DISTINCT source) AS sources "
                 f"FROM market_daily WHERE symbol IN ({placeholders}) "
                 "GROUP BY symbol ORDER BY symbol",
                 user_symbols,
@@ -5692,7 +5776,21 @@ def data_quality_center(path: Path, user_id: str) -> dict[str, Any]:
             ).fetchone()[0])
             if user_symbols else 0
         )
+        intraday_rows = (
+            db.execute(
+                f"SELECT symbol, bar_timestamp, source, fetched_at FROM intraday_bars "
+                f"WHERE symbol IN ({placeholders}) AND timeframe = '1Min' "
+                "ORDER BY symbol, bar_timestamp",
+                user_symbols,
+            ).fetchall()
+            if user_symbols else []
+        )
         option_snapshots = int(db.execute("SELECT COUNT(*) FROM option_chain_snapshots WHERE user_id = ?", (user_id,)).fetchone()[0])
+        option_rows = db.execute(
+            "SELECT symbol, result_json, fetched_at FROM option_chain_snapshots "
+            "WHERE user_id = ? ORDER BY fetched_at DESC, id DESC LIMIT 100",
+            (user_id,),
+        ).fetchall()
         adjustments = (
             int(db.execute(
                 f"SELECT COUNT(*) FROM market_adjustments WHERE symbol IN ({placeholders})",
@@ -5706,6 +5804,34 @@ def data_quality_center(path: Path, user_id: str) -> dict[str, Any]:
     for row in market:
         age = (current - date.fromisoformat(str(row["latest_date"]))).days
         symbols.append({**dict(row), "age_days": age, "status": "current" if age <= 7 else "stale"})
+    now_ny = datetime.now(timezone.utc).astimezone(NEW_YORK)
+    intraday_groups: dict[tuple[str, date], list[datetime]] = {}
+    for row in intraday_rows:
+        timestamp = datetime.fromisoformat(
+            str(row["bar_timestamp"]).replace("Z", "+00:00")
+        ).astimezone(NEW_YORK)
+        if (9, 30) <= (timestamp.hour, timestamp.minute) < (16, 0):
+            intraday_groups.setdefault((str(row["symbol"]), timestamp.date()), []).append(timestamp)
+    intraday_quality = [
+        {
+            "symbol": symbol,
+            "session_date": session_date.isoformat(),
+            **intraday_coverage(timestamps, session_date=session_date, as_of=now_ny),
+        }
+        for (symbol, session_date), timestamps in sorted(intraday_groups.items())
+    ]
+    latest_options: dict[str, dict[str, Any]] = {}
+    for row in option_rows:
+        symbol = str(row["symbol"])
+        if symbol in latest_options:
+            continue
+        payload = json.loads(str(row["result_json"]))
+        latest_options[symbol] = {
+            "symbol": symbol,
+            "fetched_at": row["fetched_at"],
+            **option_snapshot_quality(payload.get("contracts") or []),
+        }
+    option_quality = list(latest_options.values())
     failures = [item for item in last_runs if item["status"] in {"failed", "partial"}]
     return {
         "generated_at": now_iso(),
@@ -5714,8 +5840,16 @@ def data_quality_center(path: Path, user_id: str) -> dict[str, Any]:
             "stale_symbols": sum(item["status"] == "stale" for item in symbols),
             "intraday_sessions": intraday, "option_snapshots": option_snapshots,
             "corporate_actions": adjustments, "recent_failed_runs": len(failures),
+            "intraday_missing_minutes": sum(item["missing_minutes"] for item in intraday_quality),
+            "partial_intraday_sessions": sum(item["status"] != "ready" for item in intraday_quality),
+            "option_crossed_markets": sum(item["crossed_markets"] for item in option_quality),
+            "option_wide_spreads": sum(item["wide_spreads"] for item in option_quality),
         },
-        "symbols": symbols, "recent_runs": last_runs, "recent_failures": failures,
+        "symbols": symbols,
+        "intraday_quality": intraday_quality,
+        "option_quality": option_quality,
+        "recent_runs": last_runs,
+        "recent_failures": failures,
         "provider_status": market_status(path, user_id),
         "policies": {
             "daily_cache_minutes": os.environ.get("INVESTORLAB_MARKET_CACHE_MINUTES", "720"),
@@ -6361,6 +6495,7 @@ def option_chain(
             "expected_move": format(expected_move.quantize(Decimal("0.0001")), "f") if expected_move is not None else None,
             "expected_move_days": expected_move_dte,
         },
+        "quality": option_snapshot_quality(contracts),
         "contracts": contracts,
         "candidates": candidates,
         "analytics": _option_analytics(contracts, underlying, portfolio_state),
@@ -6905,6 +7040,11 @@ def realtime_day_trade_plan(
     session = [bar for bar in parsed if bar["timestamp"].date() == session_date]
     premarket = [bar for bar in session if (4, 0) <= (bar["timestamp"].hour, bar["timestamp"].minute) < (9, 30)]
     regular = [bar for bar in session if (9, 30) <= (bar["timestamp"].hour, bar["timestamp"].minute) < (16, 0)]
+    coverage = intraday_coverage(
+        (bar["timestamp"] for bar in regular),
+        session_date=session_date,
+        as_of=now_ny,
+    )
     opening_range = [bar for bar in regular if (bar["timestamp"].hour, bar["timestamp"].minute) < (9, 35)]
     total_volume = sum(bar["volume"] for bar in regular)
     vwap_numerator = sum(
@@ -7006,6 +7146,11 @@ def realtime_day_trade_plan(
         "replay": replay,
         "stored_bars": stored_bars,
         "fetched_at": now_iso(),
+        "data_quality": {
+            **coverage,
+            "source": "alpaca_iex",
+            "latest_observation_at": latest_trade.get("t"),
+        },
         "data_scope": "IEX-only real-time observations on Alpaca Basic. VWAP, volume, and relative volume use regular-session bars through the latest observed minute and may differ from consolidated SIP data.",
         "cache_seconds": 20,
     }
@@ -7428,105 +7573,7 @@ def _adjusted_history_available(
 def _market_data_quality(
     rows: list[sqlite3.Row], *, historically_adjusted: bool = False
 ) -> dict[str, Any]:
-    if not rows:
-        return {
-            "status": "blocked", "score": 0, "decision_eligible": False,
-            "checks": [], "blockers": ["No daily bars are cached."],
-            "warnings": [], "price_adjustment": "raw",
-        }
-    invalid_ohlc = 0
-    discontinuities = []
-    calendar_gaps = []
-    for index, row in enumerate(rows):
-        open_price = int(row["open_micros"])
-        high = int(row["high_micros"])
-        low = int(row["low_micros"])
-        close = int(row["close_micros"])
-        if low > min(open_price, close) or high < max(open_price, close) or low > high:
-            invalid_ohlc += 1
-        if index == 0:
-            continue
-        previous = rows[index - 1]
-        previous_close = int(previous["close_micros"])
-        ratio = Decimal(close) / Decimal(previous_close)
-        if ratio >= Decimal("1.8") or ratio <= Decimal("0.55"):
-            discontinuities.append(
-                {
-                    "trading_date": row["trading_date"],
-                    "previous_date": previous["trading_date"],
-                    "close_ratio": _percent(ratio),
-                }
-            )
-        previous_date = date.fromisoformat(str(previous["trading_date"]))
-        current_date = date.fromisoformat(str(row["trading_date"]))
-        weekdays = sum(
-            (previous_date + timedelta(days=offset)).weekday() < 5
-            for offset in range(1, (current_date - previous_date).days)
-        )
-        if weekdays > 2:
-            calendar_gaps.append(
-                {
-                    "after": previous["trading_date"],
-                    "before": row["trading_date"],
-                    "unobserved_weekdays": weekdays,
-                }
-            )
-    latest_date = date.fromisoformat(str(rows[-1]["trading_date"]))
-    age_days = (date.today() - latest_date).days
-    blockers = []
-    warnings = [] if historically_adjusted else [
-        "Daily OHLCV is raw and not adjusted for historical splits or cash dividends."
-    ]
-    if invalid_ohlc:
-        blockers.append(f"{invalid_ohlc} daily bars fail OHLC consistency checks.")
-    if discontinuities:
-        blockers.append(
-            "A corporate-action-scale price discontinuity was detected; verify split adjustment before scoring."
-        )
-    if age_days > 7:
-        warnings.append(f"The latest daily bar is {age_days} calendar days old.")
-    if len(rows) < 60:
-        warnings.append(f"Only {len(rows)} daily bars are cached; 60 are required for decisions.")
-    if calendar_gaps:
-        warnings.append(
-            f"{len(calendar_gaps)} calendar gap(s) contain more than two unobserved weekdays."
-        )
-    score = max(
-        0,
-        100 - invalid_ohlc * 20 - len(discontinuities) * 45
-        - (20 if age_days > 7 else 0) - (15 if len(rows) < 60 else 0)
-        - min(15, len(calendar_gaps) * 5),
-    )
-    status = "blocked" if blockers else "caution" if warnings else "ready"
-    return {
-        "status": status,
-        "score": score,
-        "decision_eligible": not blockers and age_days <= 7 and len(rows) >= 60,
-        "observations": len(rows),
-        "latest_age_days": age_days,
-        "invalid_ohlc_bars": invalid_ohlc,
-        "suspected_corporate_actions": discontinuities,
-        "calendar_gaps": calendar_gaps,
-        "duplicate_bars": 0,
-        "price_adjustment": "historically_adjusted" if historically_adjusted else "raw",
-        "checks": [
-            {"label": "OHLC consistency", "status": "pass" if not invalid_ohlc else "blocked"},
-            {
-                "label": "Corporate-action handling",
-                "status": "blocked" if discontinuities else "pass" if historically_adjusted else "warning",
-            },
-            {"label": "Freshness", "status": "pass" if age_days <= 7 else "warning"},
-            {"label": "History depth", "status": "pass" if len(rows) >= 60 else "warning"},
-            {"label": "Calendar continuity", "status": "pass" if not calendar_gaps else "warning"},
-        ],
-        "blockers": blockers,
-        "warnings": warnings,
-        "scope": (
-            "Checks cached historically adjusted daily prices for structural errors, freshness, depth, gaps, and remaining discontinuities before scoring."
-            if historically_adjusted else
-            "Checks cached raw daily bars for structural errors, freshness, depth, gaps, and split-scale discontinuities before scoring."
-        ),
-    }
+    return assess_daily_bars(rows, historically_adjusted=historically_adjusted)
 
 
 def _market_research_from_db(
@@ -10406,6 +10453,17 @@ def market_research(path: Path, raw_symbol: Any) -> dict[str, Any]:
             "feed": "iex",
             "reason": str(error),
         }
+    source_check = compare_prices(
+        research.get("latest_close"), quote.get("latest_price")
+    )
+    if isinstance(research.get("data_quality"), dict):
+        quality = {**research["data_quality"], "cross_source_price": source_check}
+        if source_check["status"] == "warning":
+            quality["warnings"] = [
+                *quality.get("warnings", []),
+                "The latest IEX observation differs by more than 3% from the cached end-of-day close; confirm session timing and source scope.",
+            ]
+        research = {**research, "data_quality": quality}
     return {**research, "realtime_quote": quote}
 
 
@@ -10466,6 +10524,8 @@ def refresh_market(path: Path, raw_symbol: Any, api_key: str, cache_minutes: int
 
 
 def make_handler(db_path: Path, web_root: Path) -> type[BaseHTTPRequestHandler]:
+    request_rate_limiter = RequestRateLimiter()
+
     class InvestorLabHandler(BaseHTTPRequestHandler):
         server_version = "InvestorLab/1.0"
 
@@ -10479,11 +10539,57 @@ def make_handler(db_path: Path, web_root: Path) -> type[BaseHTTPRequestHandler]:
             self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
             self.send_header(
                 "Content-Security-Policy",
-                "default-src 'self'; script-src 'self' 'unsafe-inline'; "
-                "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
-                "connect-src 'self'; object-src 'none'; base-uri 'none'; "
-                "frame-ancestors 'none'; form-action 'self'",
+                CONTENT_SECURITY_POLICY,
             )
+
+        def _client_address(self) -> str:
+            return client_address(
+                self.client_address[0],
+                self.headers,
+                trust_proxy=os.environ.get("INVESTORLAB_TRUST_PROXY") == "1",
+            )
+
+        def _enforce_rate_limit(self, route: str, method: str) -> None:
+            if route in {"/", "/api/health", "/api/contract"} or route in STATIC_ASSETS:
+                limit, window = 240, 60
+            elif route in {"/api/auth/register", "/api/auth/login"}:
+                limit, window = 20, 15 * 60
+            elif route.startswith("/api/alpaca/paper-orders") or route == "/api/system/restore":
+                limit, window = 10, 60
+            elif method in {"POST", "PATCH", "DELETE"}:
+                limit, window = 60, 60
+            else:
+                limit, window = 300, 60
+            address = self._client_address()
+            key = identity_hash("request-rate", f"{address}:{method}:{route}")
+            allowed, retry_after = request_rate_limiter.check(key, limit, window)
+            if not allowed:
+                append_security_event(
+                    db_path,
+                    "request_rate_limit",
+                    "blocked",
+                    address=address,
+                    details={"method": method, "route": route, "retry_after": retry_after},
+                )
+                raise ApiError(
+                    429,
+                    "Too many requests for this endpoint. Try again later.",
+                    {"Retry-After": str(retry_after)},
+                )
+
+        def _access_gateway_email(self) -> str | None:
+            if os.environ.get("INVESTORLAB_ACCESS_GATEWAY", "").lower() != "cloudflare":
+                return None
+            if os.environ.get("INVESTORLAB_TRUST_PROXY") != "1":
+                raise ApiError(500, "Cloudflare Access requires INVESTORLAB_TRUST_PROXY=1.")
+            if self.headers.get("X-Forwarded-Proto", "").lower() != "https":
+                raise ApiError(401, "Authenticated HTTPS gateway required.")
+            if not self.headers.get("Cf-Access-Jwt-Assertion", "").strip():
+                raise ApiError(401, "Cloudflare Access assertion required.")
+            email = self.headers.get("Cf-Access-Authenticated-User-Email", "").strip().lower()
+            if not email:
+                raise ApiError(401, "Cloudflare Access identity required.")
+            return email
 
         def _send_json(
             self, status: int, value: Any, extra_headers: dict[str, str] | None = None
@@ -10604,6 +10710,9 @@ def make_handler(db_path: Path, web_root: Path) -> type[BaseHTTPRequestHandler]:
             user, csrf_token, token_hash, client_type = authenticate_session(db_path, token)
             if is_bearer != (client_type == "ios"):
                 raise ApiError(401, "Session transport does not match the authenticated client.")
+            gateway_email = self._access_gateway_email()
+            if gateway_email and not hmac.compare_digest(gateway_email, user["email"].lower()):
+                raise ApiError(403, "Gateway identity does not match the signed-in account.")
             if require_csrf and client_type == "web":
                 supplied = self.headers.get("X-CSRF-Token", "")
                 if not supplied or not hmac.compare_digest(supplied, csrf_token):
@@ -10619,6 +10728,9 @@ def make_handler(db_path: Path, web_root: Path) -> type[BaseHTTPRequestHandler]:
                 "expires_at": session["expires_at"],
                 "revision": snapshot(db_path, user["id"])["revision"],
             }
+            if session.get("security_notice"):
+                response["security_notice"] = session["security_notice"]
+                response["unusual_login"] = bool(session.get("unusual_login"))
             headers = None
             if client == "ios":
                 response["access_token"] = session["access_token"]
@@ -10632,7 +10744,7 @@ def make_handler(db_path: Path, web_root: Path) -> type[BaseHTTPRequestHandler]:
 
         def _handle_error(self, error: Exception) -> None:
             if isinstance(error, ApiError):
-                self._send_json(error.status, {"error": str(error)})
+                self._send_json(error.status, {"error": str(error)}, error.headers)
             elif isinstance(error, InputError):
                 self._send_json(400, {"error": str(error)})
             else:
@@ -10642,6 +10754,7 @@ def make_handler(db_path: Path, web_root: Path) -> type[BaseHTTPRequestHandler]:
         def do_GET(self) -> None:
             try:
                 route = self._route()
+                self._enforce_rate_limit(route, "GET")
                 if route == "/api/health":
                     self._send_json(
                         200,
@@ -10650,9 +10763,12 @@ def make_handler(db_path: Path, web_root: Path) -> type[BaseHTTPRequestHandler]:
                             "mode": "local",
                             "app_version": APP_VERSION,
                             "schema_version": SCHEMA_VERSION,
+                            "api_contract_version": API_CONTRACT_VERSION,
                             "auth_required": True,
                         },
                     )
+                elif route == "/api/contract":
+                    self._send_json(200, contract_document())
                 elif route == "/":
                     self._send_html(web_root / "index.html", "Web app is missing.")
                 elif route in {"/design-system", "/design-system.html"}:
@@ -10792,6 +10908,14 @@ def make_handler(db_path: Path, web_root: Path) -> type[BaseHTTPRequestHandler]:
                         self._send_json(200, portfolio_intelligence(db_path, user_id))
                     elif route == "/api/data-quality":
                         self._send_json(200, data_quality_center(db_path, user_id))
+                    elif route == "/api/security/events":
+                        self._send_json(
+                            200,
+                            {
+                                **read_security_events(db_path, user_id=user_id, limit=100),
+                                "scope": "Privacy-preserving local audit; network, email, device, and user identifiers are stored only as hashes.",
+                            },
+                        )
                     elif route == "/api/reports":
                         query = parse_qs(urlparse(self.path).query)
                         try:
@@ -10863,39 +10987,66 @@ def make_handler(db_path: Path, web_root: Path) -> type[BaseHTTPRequestHandler]:
 
         def do_POST(self) -> None:
             try:
-                payload = self._read_json()
                 route = self._route()
+                self._enforce_rate_limit(route, "POST")
+                payload = self._read_json()
                 if route in {"/api/auth/register", "/api/auth/login"}:
                     client = str(payload.get("client") or "web").lower()
                     if client not in {"web", "ios"}:
                         raise InputError("Client must be web or ios.")
+                    gateway_email = self._access_gateway_email()
+                    payload_email = normalize_email(payload.get("email"))
+                    if gateway_email and not hmac.compare_digest(gateway_email, payload_email):
+                        raise ApiError(403, "Gateway identity does not match the requested account.")
                     if route == "/api/auth/register":
                         allow_additional = os.environ.get("INVESTORLAB_ALLOW_REGISTRATION") == "1"
                         user, session = register_user(db_path, payload, allow_additional)
+                        append_security_event(
+                            db_path,
+                            "registration",
+                            "success",
+                            user_id=user["id"],
+                            email=user["email"],
+                            address=self._client_address(),
+                            device_id=str(payload.get("device_id") or ""),
+                            client_type=client,
+                        )
                         self._auth_response(201, user, session, client)
                     else:
-                        user, session = login_user(db_path, payload, self.client_address[0])
+                        user, session = login_user(db_path, payload, self._client_address())
                         self._auth_response(200, user, session, client)
                 else:
                     user, _, token_hash, _ = self._require_auth(require_csrf=True)
                     user_id = user["id"]
                     if route == "/api/auth/logout":
                         delete_session(db_path, token_hash)
+                        append_security_event(
+                            db_path, "logout", "success", user_id=user_id,
+                            address=self._client_address(),
+                        )
                         self._send_json(
                             200,
                             {"logged_out": True},
                             {"Set-Cookie": self._session_cookie("", 0)},
                         )
                     elif route == "/api/auth/change-password":
+                        result = change_password(db_path, user_id, payload)
+                        append_security_event(
+                            db_path, "password_change", "success", user_id=user_id,
+                            address=self._client_address(),
+                        )
                         self._send_json(
-                            200,
-                            change_password(db_path, user_id, payload),
+                            200, result,
                             {"Set-Cookie": self._session_cookie("", 0)},
                         )
                     elif route == "/api/auth/logout-all":
+                        result = logout_all(db_path, user_id, payload)
+                        append_security_event(
+                            db_path, "logout_all", "success", user_id=user_id,
+                            address=self._client_address(),
+                        )
                         self._send_json(
-                            200,
-                            logout_all(db_path, user_id, payload),
+                            200, result,
                             {"Set-Cookie": self._session_cookie("", 0)},
                         )
                     elif route == "/api/watchlist":
@@ -10931,7 +11082,13 @@ def make_handler(db_path: Path, web_root: Path) -> type[BaseHTTPRequestHandler]:
                         self._send_json(201, create_database_backup(db_path, user_id))
                     elif route == "/api/system/restore":
                         require_owner(user)
-                        self._send_json(200, restore_database_backup(db_path, user_id, payload))
+                        result = restore_database_backup(db_path, user_id, payload)
+                        append_security_event(
+                            db_path, "database_restore", "success", user_id=user_id,
+                            address=self._client_address(),
+                            details={"filename": result["filename"]},
+                        )
+                        self._send_json(200, result)
                     elif route == "/api/system/health-check":
                         self._send_json(200, run_system_health_check(db_path, user_id))
                     elif route == "/api/validation/run":
@@ -10941,15 +11098,31 @@ def make_handler(db_path: Path, web_root: Path) -> type[BaseHTTPRequestHandler]:
                         self._send_json(200, sync_paper_account(db_path, user_id))
                     elif route == "/api/alpaca/paper-orders":
                         require_owner(user)
-                        self._send_json(201, submit_paper_order(db_path, user_id, payload))
+                        result = submit_paper_order(db_path, user_id, payload)
+                        append_security_event(
+                            db_path, "paper_order_submit", "success", user_id=user_id,
+                            address=self._client_address(),
+                            details={"symbol": result.get("symbol"), "order_id": result.get("broker_order_id")},
+                        )
+                        self._send_json(201, result)
                     elif re.fullmatch(r"/api/alpaca/paper-orders/[^/]+/cancel", route):
                         require_owner(user)
                         order_id = unquote(route.removeprefix("/api/alpaca/paper-orders/").removesuffix("/cancel"))
-                        self._send_json(200, cancel_paper_order(db_path, user_id, order_id, payload))
+                        result = cancel_paper_order(db_path, user_id, order_id, payload)
+                        append_security_event(
+                            db_path, "paper_order_cancel", "success", user_id=user_id,
+                            address=self._client_address(), details={"order_id": order_id},
+                        )
+                        self._send_json(200, result)
                     elif re.fullmatch(r"/api/alpaca/paper-orders/[^/]+/replace", route):
                         require_owner(user)
                         order_id = unquote(route.removeprefix("/api/alpaca/paper-orders/").removesuffix("/replace"))
-                        self._send_json(200, replace_paper_order(db_path, user_id, order_id, payload))
+                        result = replace_paper_order(db_path, user_id, order_id, payload)
+                        append_security_event(
+                            db_path, "paper_order_replace", "success", user_id=user_id,
+                            address=self._client_address(), details={"order_id": order_id},
+                        )
+                        self._send_json(200, result)
                     elif route == "/api/scanner-presets":
                         self._send_json(201, save_scanner_preset(db_path, user_id, payload))
                     elif route == "/api/scanner/run":
@@ -11048,8 +11221,9 @@ def make_handler(db_path: Path, web_root: Path) -> type[BaseHTTPRequestHandler]:
 
         def do_PATCH(self) -> None:
             try:
-                payload = self._read_json()
                 route = self._route()
+                self._enforce_rate_limit(route, "PATCH")
+                payload = self._read_json()
                 user, _, _, _ = self._require_auth(require_csrf=True)
                 if route == "/api/investor-profile":
                     self._send_json(
@@ -11061,9 +11235,12 @@ def make_handler(db_path: Path, web_root: Path) -> type[BaseHTTPRequestHandler]:
                     )
                 elif route == "/api/alpaca/paper-orders/control":
                     require_owner(user)
-                    self._send_json(
-                        200, update_paper_order_control(db_path, user["id"], payload)
+                    result = update_paper_order_control(db_path, user["id"], payload)
+                    append_security_event(
+                        db_path, "paper_order_control", "success", user_id=user["id"],
+                        address=self._client_address(), details={"enabled": result.get("enabled")},
                     )
+                    self._send_json(200, result)
                 else:
                     self._send_json(404, {"error": "Not found."})
             except Exception as error:
@@ -11072,6 +11249,7 @@ def make_handler(db_path: Path, web_root: Path) -> type[BaseHTTPRequestHandler]:
         def do_DELETE(self) -> None:
             try:
                 route = self._route()
+                self._enforce_rate_limit(route, "DELETE")
                 user, _, token_hash, _ = self._require_auth(require_csrf=True)
                 if route.startswith("/api/watchlist/"):
                     deleted = remove_watchlist(

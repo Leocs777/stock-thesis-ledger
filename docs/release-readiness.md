@@ -42,7 +42,9 @@ The local service reports `INVESTORLAB_PUBLIC_URL` in System Health. The optiona
 LaunchAgent tunnel template requires a user-supplied authenticated HTTPS
 endpoint. Do not expose the Python server directly to the internet. A public
 beta should place authentication, request limits, backups, and audit logging
-behind a hardened gateway.
+behind a hardened gateway. Phase 2 gateway, encrypted-backup, and restore-drill
+guidance is in `phase-2-operations.md`; the in-process request limiter does not
+replace edge rate limiting for multiple server instances.
 
 After replacing the LaunchAgent plist or server code, run
 `scripts/reload-local-service.sh` once. The script reloads only the compatible

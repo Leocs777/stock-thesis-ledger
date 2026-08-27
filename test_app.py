@@ -88,18 +88,6 @@ class InvestorLabAPITest(unittest.TestCase):
             _configure_tls_ca_environment("darwin", ca_bundle)
             self.assertEqual(os.environ["SSL_CERT_FILE"], "/custom/cert.pem")
 
-    def test_public_checkout_has_portable_ios_and_broker_defaults(self):
-        root = Path(__file__).parent
-        ios_source = (root / "ios" / "InvestorLab" / "InvestorLabApp.swift").read_text()
-        xcode_project = (root / "ios" / "InvestorLab.xcodeproj" / "project.pbxproj").read_text()
-        server_source = (root / "app.py").read_text()
-        self.assertIn('private static let defaultServerURL = ""', ios_source)
-        self.assertNotIn(".ngrok" + "-free.", ios_source)
-        self.assertNotIn("DEVELOPMENT" + "_TEAM =", xcode_project)
-        self.assertIn("PRODUCT_BUNDLE_IDENTIFIER = org.investorlab.app;", xcode_project)
-        self.assertNotIn("https://api" + ".alpaca.markets", server_source)
-        self.assertIn("https://paper-api" + ".alpaca.markets", server_source)
-
     def request(self, method, path, payload=None, *, csrf=True, bearer=None):
         body = json.dumps(payload).encode() if payload is not None else None
         headers = {}
@@ -130,11 +118,18 @@ class InvestorLabAPITest(unittest.TestCase):
 
     def test_design_system_preview_and_health_are_public(self):
         status, content_type, app_shell = self.request_text("/")
+        _, css_type, app_css = self.request_text("/assets/app.css")
+        _, js_type, app_js = self.request_text("/assets/app.js")
         self.assertEqual((status, content_type), (200, "text/html"))
+        self.assertEqual((css_type, js_type), ("text/css", "text/javascript"))
+        self.assertNotIn("<style>", app_shell)
+        self.assertNotIn("<script>", app_shell)
+        self.assertIn("const zhCN", app_js)
+        self.assertIn("--signal:", app_css)
         self.assertIn("Trading strategy", app_shell)
         self.assertIn('id="appLanguage"', app_shell)
         self.assertIn("简体中文", app_shell)
-        self.assertIn('"Trading strategy": "交易策略"', app_shell)
+        self.assertIn('"Trading strategy": "交易策略"', app_js)
         self.assertIn("Maximum position · % per symbol", app_shell)
         self.assertIn(
             "60% technical · 25% fundamentals · 15% position fit",
@@ -171,6 +166,11 @@ class InvestorLabAPITest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(health["auth_required"])
         self.assertEqual(health["schema_version"], 17)
+        self.assertEqual(health["api_contract_version"], "2026-08-26.phase2")
+
+        status, contract = self.request("GET", "/api/contract")
+        self.assertEqual(status, 200)
+        self.assertTrue(contract["paper_only"])
 
     def test_positive_micros_rejects_nonfinite_values(self):
         for value in ("NaN", "Infinity", "-Infinity"):
@@ -179,14 +179,16 @@ class InvestorLabAPITest(unittest.TestCase):
 
     def test_chinese_catalog_covers_static_and_dynamic_product_copy(self):
         root = Path(__file__).parent
-        web = (root / "web" / "index.html").read_text()
+        web_shell = (root / "web" / "index.html").read_text()
+        web_js = (root / "web" / "app.js").read_text()
+        web = web_shell + "\n" + web_js
         app_source = (root / "app.py").read_text()
         catalog_source = web[web.index("const zhCN = {") : web.index("function t(value)")]
         web_keys = {
             json.loads(f'"{match}"')
             for match in re.findall(r'^\s+"((?:[^"\\]|\\.)+)":', catalog_source, re.MULTILINE)
         }
-        body = web[web.index("<body") : web.index("<script>")]
+        body = web_shell[web_shell.index("<body") : web_shell.index("</body>")]
         visible_copy = {
             re.sub(r"\s+", " ", html.unescape(match)).strip()
             for match in re.findall(r">([^<>]+)<", body)

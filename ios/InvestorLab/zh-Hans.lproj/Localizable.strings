@@ -617,6 +617,10 @@
 "Strategy Lab 4.1" = "策略实验室 4.1";
 "Data-gated decisions, outcome validation, and parameter sensitivity." = "带数据门控、结果验证和参数敏感性的决策。";
 "Data quality" = "数据质量";
+"Missing intraday minutes" = "缺失的日内分钟";
+"Option quote warnings" = "期权报价警告";
+"Crossed and wide markets" = "交叉报价和过宽价差";
+"New network or device observed. Review connected devices and sign out all sessions if this was not you." = "检测到新的网络或设备。如果不是你本人，请检查已连接设备并退出所有会话。";
 "Decision gate" = "评分数据状态";
 "Scoring readiness" = "评分就绪状态";
 "Ready to score" = "可以评分";

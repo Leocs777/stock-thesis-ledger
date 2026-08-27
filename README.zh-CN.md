@@ -8,7 +8,7 @@
 
 [![CI](https://github.com/Leocs777/stock-thesis-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/Leocs777/stock-thesis-ledger/actions/workflows/ci.yml)
 [![许可证：AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-22313f.svg)](LICENSE)
-[![版本：v0.1.6](https://img.shields.io/badge/release-v0.1.6-1d4ed8.svg)](CHANGELOG.md)
+[![候选版本：v0.2.0](https://img.shields.io/badge/release_candidate-v0.2.0-1d4ed8.svg)](CHANGELOG.md)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-0f766e.svg)](#快速开始)
 [![仅限模拟交易](https://img.shields.io/badge/brokerage-Paper_only-e85d2a.svg)](#安全边界)
 
@@ -39,6 +39,15 @@ Stock Thesis Ledger 把一次投资判断保存为可复核的记录：输入数
 
 [查看中英双语项目网站](https://leocs777.github.io/stock-thesis-ledger/zh-CN/)；网站同时提供
 可用于 TestFlight/App Store Connect 的中英文隐私政策和支持页面。
+
+## v0.2.0 第二期更新
+
+- Web 脚本和样式全部改为外部静态资源，严格 CSP 不再允许 `unsafe-inline`。
+- 新增分接口限流、只保存哈希标识的安全审计，以及新网络/设备登录提醒。
+- 提供可选 Cloudflare Access 身份绑定；网关邮箱必须与本地账户一致。
+- Web/iOS 共用版本化 API 契约，并在 CI 检查跨端路由与 CSP。
+- 数据质量增加日线复权/异常跳变、跨来源价格差、日内缺失分钟、期权交叉报价和过宽价差。
+- 新增加密异地备份和只读恢复演练，不覆盖当前数据库。详见[第二期运维指南](docs/phase-2-operations.md)。
 
 ## v0.1.6 更新
 
@@ -183,6 +192,8 @@ python3 app.py
 | `INVESTORLAB_ALLOW_REGISTRATION` | `0` | 是否允许第一个账户后的注册 |
 | `INVESTORLAB_SECURE_COOKIE` | `0` | HTTPS 时设为 `1` |
 | `INVESTORLAB_PUBLIC_URL` | 空 | 提供给客户端的 HTTPS 地址 |
+| `INVESTORLAB_ACCESS_GATEWAY` | 空 | 配好 Access 策略后可设为 `cloudflare` |
+| `INVESTORLAB_TRUST_PROXY` | `0` | 只在受控网关后设为 `1` |
 | `INVESTORLAB_SEC_CONTACT` | 登录邮箱 | SEC EDGAR 请求联系地址 |
 | `ALPHAVANTAGE_API_KEY` | 空 | 可选日线/业绩数据 key |
 | `ALPACA_API_KEY_ID` | 空 | 可选 Alpaca Market/Paper key |
@@ -214,8 +225,9 @@ python3 app.py
 ## 测试
 
 ```bash
+python3 scripts/check_api_contract.py
 python3 -m unittest -v
-python3 -m py_compile app.py test_app.py investor_lab/portfolio_math.py
+python3 -m compileall -q app.py test_app.py test_paper_validation.py test_phase2.py investor_lab scripts
 python3 scripts/check-local-links.py
 zsh -n setup.sh scripts/archive-testflight.sh scripts/reload-local-service.sh
 ```

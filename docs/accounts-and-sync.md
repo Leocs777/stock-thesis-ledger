@@ -25,6 +25,9 @@ Status: local-first reference implementation.
 - The first account is the local vault owner. Later controlled accounts are
   members; shared provider credentials, Paper controls, backups, restore, and
   system-maintenance mutations are owner-only.
+- Endpoint-class request limits, privacy-preserving append-only security events,
+  and a warning when a successful login uses a previously unseen network and
+  device pair. Audit identifiers are one-way hashes, not raw addresses or email.
 - Preview-first CSV position import with a 500-row limit, whole-file validation,
   an atomic append-only write, and duplicate-content fingerprint protection.
 - Authenticated data-health reporting for SQLite integrity, account record
@@ -114,7 +117,8 @@ backup/restore health automation, and expands collection-run job types without
 weakening their status constraints. Schema v16 adds `paper_order_controls`,
 `paper_order_intents`, `scanner_presets`, `notification_rules`, and
 `research_reports`. Schema v17 adds user roles and binds sessions to their
-client transport and registered device.
+client transport and registered device. Phase 2 security auditing remains
+file-based so the schema and stored decision contexts are unchanged.
 
 No downgrade migration is provided. Back up `data/investor-lab.sqlite3` before
 manually changing or replacing the database.
@@ -140,6 +144,7 @@ HTTPS tunnel. Leave it unset only for local `http://127.0.0.1` development.
 Public routes:
 
 - `GET /api/health`
+- `GET /api/contract`
 - `POST /api/auth/register`
 - `POST /api/auth/login`
 
@@ -211,6 +216,7 @@ Authenticated routes:
 - `GET /api/strategies/compare`
 - `GET /api/portfolio/intelligence`
 - `GET /api/data-quality`
+- `GET /api/security/events`
 - `POST /api/research/copilot`
 - `GET|POST /api/reports`
 - `GET /api/research/command-center`

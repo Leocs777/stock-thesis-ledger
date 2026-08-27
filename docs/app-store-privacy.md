@@ -1,6 +1,6 @@
 # App Store privacy and TestFlight metadata
 
-Status: v0.1.6 internal-test preparation. This is an engineering checklist, not
+Status: v0.2.0 internal-test preparation. This is an engineering checklist, not
 legal advice. Re-evaluate the answers whenever deployment ownership or data flow
 changes.
 

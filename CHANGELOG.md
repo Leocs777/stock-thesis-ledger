@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0 - 2026-08-26
+
+- Split security, API contracts, market-data quality, and encrypted backups into
+  focused standard-library modules while preserving the modular monolith.
+- Removed inline Web scripts and styles and removed `unsafe-inline` from CSP.
+- Added endpoint rate limits, hashed security audit records, new-device login
+  warnings, and optional Cloudflare Access identity binding.
+- Added cross-source prices, missing intraday minutes, and option quote-quality
+  reporting across Web and iOS.
+- Added encrypted offsite backup creation, non-destructive restore drills, and
+  CI-enforced API/CSP contract checks.
+
 ## 0.1.6 - 2026-08-24
 
 - Correct equity/option position separation, option contract multipliers, account weights, sector weights, and Paper option order notional.

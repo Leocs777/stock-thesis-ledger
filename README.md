@@ -11,7 +11,7 @@ Paper-only execution boundary.
 
 [![CI](https://github.com/Leocs777/stock-thesis-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/Leocs777/stock-thesis-ledger/actions/workflows/ci.yml)
 [![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-22313f.svg)](LICENSE)
-[![Release: v0.1.6](https://img.shields.io/badge/release-v0.1.6-1d4ed8.svg)](#v016-correctness-and-session-security)
+[![Release candidate: v0.2.0](https://img.shields.io/badge/release_candidate-v0.2.0-1d4ed8.svg)](#v020-security-contracts-and-data-quality)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-0f766e.svg)](#quick-start)
 [![Paper only](https://img.shields.io/badge/brokerage-Paper_only-e85d2a.svg)](#safety-boundary)
 
@@ -42,6 +42,21 @@ evidence; the journal, worksheets, sync, and paper ledger remain local.
 [Read the strategy methodology](docs/strategy-methodology.md) ·
 [Run a Paper validation campaign](docs/paper-validation-protocol.md) ·
 [Understand the safety model](#safety-boundary)
+
+## v0.2.0 security, contracts, and data quality
+
+Version 0.2.0 removes inline Web scripts and styles and enforces a strict CSP,
+adds endpoint-class request limits, privacy-preserving security audits, and a
+visible warning for a new network/device login. An optional Cloudflare Access
+mode binds the authenticated gateway email to the local account.
+
+The Web and iOS route catalog is versioned and checked in CI. Daily research now
+labels raw versus adjusted history and checks price discontinuities; refreshed
+research compares the cached close with the latest IEX observation. Day Trade
+reports missing regular-session minutes, while Options reports crossed markets,
+wide spreads, quote coverage, and liquidity. A zero-dependency command creates
+AES-encrypted offsite backups and runs a non-destructive restore drill. See the
+[Phase 2 operations guide](docs/phase-2-operations.md).
 
 ## v0.1.6 correctness and session security
 
@@ -270,6 +285,8 @@ Never commit real values. Common settings are:
 | `INVESTORLAB_ALLOW_REGISTRATION` | `0` | Allow accounts after the first one |
 | `INVESTORLAB_SECURE_COOKIE` | `0` | Mark browser cookie Secure; use `1` behind HTTPS |
 | `INVESTORLAB_PUBLIC_URL` | empty | HTTPS URL reported to clients |
+| `INVESTORLAB_ACCESS_GATEWAY` | empty | Set to `cloudflare` only behind a configured Access policy |
+| `INVESTORLAB_TRUST_PROXY` | `0` | Trust proxy identity/address headers; enable only for the controlled gateway |
 | `INVESTORLAB_SEC_CONTACT` | signed-in email | Contact declared to SEC EDGAR |
 | `INVESTORLAB_MARKET_CACHE_MINUTES` | `720` | Daily-price cache lifetime |
 | `INVESTORLAB_MARKET_HISTORY` | `compact` | Alpha Vantage `compact` or `full` output |
@@ -334,13 +351,18 @@ python3 scripts/paper_validation.py report
 ## Test and validate
 
 ```bash
+python3 scripts/check_api_contract.py
 python3 -m unittest -v
-python3 -m py_compile app.py test_app.py test_paper_validation.py investor_lab/portfolio_math.py scripts/paper_validation.py
+python3 -m compileall -q app.py test_app.py test_paper_validation.py test_phase2.py investor_lab scripts
 python3 scripts/check-local-links.py
 zsh -n setup.sh scripts/archive-testflight.sh scripts/check-testflight-readiness.sh scripts/reload-local-service.sh
 plutil -lint ios/InvestorLab/Info.plist ios/InvestorLab/PrivacyInfo.xcprivacy ios/ExportOptions.plist \
   scripts/org.investorlab.server.plist scripts/org.investorlab.tunnel.plist
 ```
+
+Encrypted offsite backup and read-only recovery-drill commands are documented
+in [Phase 2 operations](docs/phase-2-operations.md). The passphrase stays in
+macOS Keychain and is never accepted as a command-line argument.
 
 For a signing-free Simulator build on macOS:
 

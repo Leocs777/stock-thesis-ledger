@@ -2,7 +2,7 @@ import Foundation
 import Security
 
 enum SecureTokenStore {
-    private static let service = "com.leochen.InvestorLab.session"
+    private static let service = "org.investorlab.session"
     private static let account = "local-api-token"
 
     static func read() throws -> String? {

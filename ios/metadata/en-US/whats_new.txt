@@ -1,1 +1,1 @@
-Version 0.1.6 improves option position math, session security, intraday VWAP consistency, validation reporting, and bilingual release readiness.
+Version 0.2.0 adds strict Web security policy, privacy-preserving login and sensitive-action audits, unusual-device warnings, versioned Web/iOS API contracts, deeper daily/intraday/options data-quality checks, and encrypted offsite backup drills.
