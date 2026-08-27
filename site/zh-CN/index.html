@@ -49,12 +49,21 @@
       </div>
     </section>
 
+    <section class="shell section">
+      <div class="section-head reveal"><div><div class="eyebrow">版本 0.2.0</div><h2>安全与证据质量清晰可见。</h2></div><p>第二期把浏览器安全策略、数据源价格分歧、日内缺失行情、期权报价异常和恢复准备度直接呈现在产品中，而不是藏在运维流程里。</p></div>
+      <div class="feature-grid">
+        <article class="card reveal"><h3>强化访问边界</h3><p>严格内容安全策略、接口限流、哈希安全事件、异常登录提醒，以及可选的 Cloudflare Access 身份边界。</p></article>
+        <article class="card reveal"><h3>先检查质量，再评分</h3><p>跨数据源价格校验、日线完整性、正常交易时段覆盖率与期权价差和流动性诊断，会说明证据何时尚不足以支持决策。</p></article>
+        <article class="card reveal"><h3>加密恢复</h3><p>经过验证的 SQLite 快照可以使用 AES-256 加密，并提前进行不会覆盖现有数据库的恢复演练。</p></article>
+      </div>
+    </section>
+
     <section class="shell section"><div class="section-head reveal"><div><div class="eyebrow">架构</div><h2>小到可以真正读懂。</h2></div><p>模块化单体让同步和风险规则集中在一处，Web 与 iOS 保持为专注的客户端。</p></div><div class="architecture reveal"><span>Web</span><b>→</b><span>Python API</span><b>→</b><span>SQLite 台账</span><b>← iOS</b></div><div class="terminal reveal"><pre>git clone https://github.com/Leocs777/stock-thesis-ledger.git
 cd stock-thesis-ledger
 ./setup.sh
 python3 app.py</pre></div><p class="fine-print">需要 Python 3.10+。界面可在无数据源密钥时运行，但刷新真实证据需要相应的数据提供商账户。使用前请阅读免责声明。</p></section>
   </main>
-  <footer><div class="shell footer-grid"><span>AGPL-3.0-only · Stock Thesis Ledger v0.1.6</span><div class="footer-links"><a href="privacy/">隐私</a><a href="support/">支持</a><a href="https://github.com/Leocs777/stock-thesis-ledger">源代码</a></div></div></footer>
+  <footer><div class="shell footer-grid"><span>AGPL-3.0-only · Stock Thesis Ledger v0.2.0</span><div class="footer-links"><a href="privacy/">隐私</a><a href="support/">支持</a><a href="https://github.com/Leocs777/stock-thesis-ledger">源代码</a></div></div></footer>
   <script src="../site.js"></script>
 </body>
 </html>
