@@ -78,8 +78,12 @@ OCC_OPTION_RE = re.compile(r"^([A-Z]{1,6})(\d{6})([CP])(\d{8})$")
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
 SCHEMA_VERSION = 17
-APP_VERSION = "0.2.0"
-DECISION_MODEL_VERSION = "decision-v4.1"
+APP_VERSION = "0.2.1"
+DECISION_MODEL_VERSION = "decision-v4.1.1"
+FUNDAMENTALS_DATA_VERSION = 5
+DECISION_HISTORY_LIMIT = 320
+MIN_HOLDOUT_EVALUATED_SESSIONS = 200
+MIN_WIN_RATE_TRADES = 10
 STRATEGY_FREEZE_PROTOCOL = "full-context-v1"
 PORTFOLIO_CALCULATION_VERSION = "portfolio-v2-option-contract-multiplier"
 SESSION_DAYS = 30
@@ -4067,8 +4071,8 @@ def _sec_number(value: Any) -> int | float | None:
 
 def _annual_fact_map(
     company_facts: dict[str, Any], tags: tuple[str, ...], unit: str, duration: bool
-) -> dict[str, dict[str, Any]]:
-    selected: dict[str, dict[str, Any]] = {}
+) -> dict[tuple[str, str], dict[str, Any]]:
+    selected: dict[tuple[str, str], dict[str, Any]] = {}
     facts = company_facts.get("facts")
     if not isinstance(facts, dict):
         return selected
@@ -4086,8 +4090,10 @@ def _annual_fact_map(
                 if not isinstance(entry, dict) or entry.get("form") not in SEC_ANNUAL_FORMS:
                     continue
                 end = str(entry.get("end") or "")
+                filed = str(entry.get("filed") or "")
                 try:
                     end_date = date.fromisoformat(end)
+                    date.fromisoformat(filed)
                     if duration:
                         start_date = date.fromisoformat(str(entry.get("start") or ""))
                         if not 300 <= (end_date - start_date).days <= 430:
@@ -4097,16 +4103,13 @@ def _annual_fact_map(
                 value = _sec_number(entry.get("val"))
                 if value is None:
                     continue
-                rank = (
-                    str(entry.get("filed") or ""),
-                    -namespace_index,
-                    -tag_index,
-                )
-                if end not in selected or rank > selected[end]["_rank"]:
-                    selected[end] = {
+                rank = (-namespace_index, -tag_index)
+                key = (end, filed)
+                if key not in selected or rank > selected[key]["_rank"]:
+                    selected[key] = {
                         "value": value,
                         "fiscal_year": entry.get("fy") or end_date.year,
-                        "filed": entry.get("filed"),
+                        "filed": filed,
                         "accession": entry.get("accn"),
                         "_rank": rank,
                     }
@@ -4117,8 +4120,8 @@ def _annual_fact_map(
 
 def _quarterly_fact_map(
     company_facts: dict[str, Any], tags: tuple[str, ...], unit: str, duration: bool
-) -> dict[str, dict[str, Any]]:
-    selected: dict[str, dict[str, Any]] = {}
+) -> dict[tuple[str, str], dict[str, Any]]:
+    selected: dict[tuple[str, str], dict[str, Any]] = {}
     facts = company_facts.get("facts")
     if not isinstance(facts, dict):
         return selected
@@ -4138,8 +4141,10 @@ def _quarterly_fact_map(
                 if str(entry.get("fp") or "").upper() not in {"Q1", "Q2", "Q3", "Q4"}:
                     continue
                 end = str(entry.get("end") or "")
+                filed = str(entry.get("filed") or "")
                 try:
                     end_date = date.fromisoformat(end)
+                    date.fromisoformat(filed)
                     if duration:
                         start_date = date.fromisoformat(str(entry.get("start") or ""))
                         if not 60 <= (end_date - start_date).days <= 120:
@@ -4149,13 +4154,14 @@ def _quarterly_fact_map(
                 value = _sec_number(entry.get("val"))
                 if value is None:
                     continue
-                rank = (str(entry.get("filed") or ""), -namespace_index, -tag_index)
-                if end not in selected or rank > selected[end]["_rank"]:
-                    selected[end] = {
+                rank = (-namespace_index, -tag_index)
+                key = (end, filed)
+                if key not in selected or rank > selected[key]["_rank"]:
+                    selected[key] = {
                         "value": value,
                         "fiscal_year": entry.get("fy") or end_date.year,
                         "fiscal_period": str(entry.get("fp") or ""),
-                        "filed": entry.get("filed"),
+                        "filed": filed,
                         "accession": entry.get("accn"),
                         "_rank": rank,
                     }
@@ -4379,9 +4385,26 @@ def _ratio_percent(numerator: int | float | None, denominator: int | float | Non
     return _percent(Decimal(str(numerator)) * 100 / Decimal(str(denominator)))
 
 
+def _latest_fundamental_periods(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    selected: dict[str, dict[str, Any]] = {}
+    for item in history:
+        period_end = str(item.get("period_end") or "")
+        filed = str(item.get("filed") or "")
+        if period_end and (
+            period_end not in selected
+            or filed > str(selected[period_end].get("filed") or "")
+        ):
+            selected[period_end] = item
+    return sorted(
+        selected.values(),
+        key=lambda item: (str(item.get("period_end") or ""), str(item.get("filed") or "")),
+    )
+
+
 def _fundamental_metrics_from_history(history: list[dict[str, Any]]) -> dict[str, Any]:
-    latest = history[-1]
-    previous = history[-2] if len(history) > 1 else None
+    periods = _latest_fundamental_periods(history)
+    latest = periods[-1]
+    previous = periods[-2] if len(periods) > 1 else None
     metrics = {
         key: latest.get(key)
         for key in (
@@ -4405,32 +4428,53 @@ def _fundamental_metrics_from_history(history: list[dict[str, Any]]) -> dict[str
 
 
 def _fundamental_periods(
-    facts: dict[str, dict[str, dict[str, Any]]], period_ends: list[str], *, quarterly: bool
+    facts: dict[str, dict[tuple[str, str], dict[str, Any]]],
+    period_ends: list[str],
+    *,
+    quarterly: bool,
 ) -> list[dict[str, Any]]:
     history = []
     for end in reversed(period_ends):
-        revenue_fact = facts["revenue"].get(end, {})
-        row = {
-            "fiscal_year": revenue_fact.get("fiscal_year"),
-            "fiscal_period": revenue_fact.get("fiscal_period") if quarterly else "FY",
-            "period_end": end,
-            "filed": max(
-                (str(facts[name].get(end, {}).get("filed") or "") for name in SEC_FACTS),
-                default="",
-            ) or None,
-        }
-        for name in SEC_FACTS:
-            row[name] = facts[name].get(end, {}).get("value")
-        operating_cash_flow = row["operating_cash_flow"]
-        capital_expenditure = row["capital_expenditure"]
-        row["free_cash_flow"] = (
-            operating_cash_flow - capital_expenditure
-            if operating_cash_flow is not None and capital_expenditure is not None
-            else None
-        )
-        row["net_margin_percent"] = _ratio_percent(row["net_income"], row["revenue"])
-        row["liabilities_to_assets_percent"] = _ratio_percent(row["liabilities"], row["assets"])
-        history.append(row)
+        filed_dates = sorted({
+            filed
+            for versions in facts.values()
+            for (period_end, filed) in versions
+            if period_end == end
+        })
+        for filed in filed_dates:
+            period_facts = {
+                name: max(
+                    (
+                        item
+                        for (period_end, item_filed), item in versions.items()
+                        if period_end == end and item_filed <= filed
+                    ),
+                    key=lambda item: str(item.get("filed") or ""),
+                    default={},
+                )
+                for name, versions in facts.items()
+            }
+            revenue_fact = period_facts["revenue"]
+            if not revenue_fact:
+                continue
+            row = {
+                "fiscal_year": revenue_fact.get("fiscal_year"),
+                "fiscal_period": revenue_fact.get("fiscal_period") if quarterly else "FY",
+                "period_end": end,
+                "filed": filed,
+            }
+            for name in SEC_FACTS:
+                row[name] = period_facts[name].get("value")
+            operating_cash_flow = row["operating_cash_flow"]
+            capital_expenditure = row["capital_expenditure"]
+            row["free_cash_flow"] = (
+                operating_cash_flow - capital_expenditure
+                if operating_cash_flow is not None and capital_expenditure is not None
+                else None
+            )
+            row["net_margin_percent"] = _ratio_percent(row["net_income"], row["revenue"])
+            row["liabilities_to_assets_percent"] = _ratio_percent(row["liabilities"], row["assets"])
+            history.append(row)
     return history
 
 
@@ -4502,7 +4546,7 @@ def _build_fundamentals(
         name: _quarterly_fact_map(company_facts, tags, unit, duration)
         for name, (tags, unit, duration) in SEC_FACTS.items()
     }
-    period_ends = sorted(facts["revenue"], reverse=True)[:5]
+    period_ends = sorted({end for end, _ in facts["revenue"]}, reverse=True)[:5]
     if not period_ends:
         return {
             "available": False,
@@ -4515,16 +4559,20 @@ def _build_fundamentals(
             "annual_history": [],
             "filings": [],
         }
-    history = _fundamental_periods(facts, period_ends, quarterly=False)
-    quarterly_history = _fundamental_periods(
-        quarterly_facts, sorted(quarterly_facts["revenue"], reverse=True)[:8], quarterly=True
+    history_vintages = _fundamental_periods(facts, period_ends, quarterly=False)
+    quarterly_history_vintages = _fundamental_periods(
+        quarterly_facts,
+        sorted({end for end, _ in quarterly_facts["revenue"]}, reverse=True)[:8],
+        quarterly=True,
     )
+    history = _latest_fundamental_periods(history_vintages)
+    quarterly_history = _latest_fundamental_periods(quarterly_history_vintages)
     latest = history[-1]
     metrics = _fundamental_metrics_from_history(history)
     filings = _sec_filings(submissions, cik)
     return {
         "available": True,
-        "data_version": 4,
+        "data_version": FUNDAMENTALS_DATA_VERSION,
         "symbol": symbol,
         "provider": "SEC EDGAR",
         "cik": cik,
@@ -4533,7 +4581,9 @@ def _build_fundamentals(
         "period_end": latest["period_end"],
         "metrics": metrics,
         "annual_history": history,
+        "annual_history_vintages": history_vintages,
         "quarterly_history": quarterly_history,
+        "quarterly_history_vintages": quarterly_history_vintages,
         "quarterly_trends": _quarterly_trends(quarterly_history),
         "company_profile": _company_profile(submissions, cik, company_name),
         "filings": filings,
@@ -4649,7 +4699,7 @@ def refresh_fundamentals(
     with open_db(path) as db:
         previous = _sec_cached(db, key)
         cached = _sec_cached(db, key, timedelta(hours=cache_hours))
-        if cached is not None and cached.get("data_version") == 4:
+        if cached is not None and cached.get("data_version") == FUNDAMENTALS_DATA_VERSION:
             return {
                 **_fundamentals_with_valuation(db, cached),
                 "cache_hit": True,
@@ -5651,7 +5701,7 @@ def strategy_comparison(path: Path, user_id: str, raw_symbol: Any = None) -> dic
         benchmark = _decision_market_rows(db, "SPY")
         profile = _investor_profile_from_db(db, user_id)
         fundamentals = _sec_cached(db, f"fundamentals:{symbol}") or {}
-        history = list(fundamentals.get("annual_history") or [])
+        history = _fundamental_history_for_backtest(fundamentals)
         versions = _strategy_versions_from_db(db, user_id)[:12]
         decision_runs = _decision_rows(db, user_id, limit=1_000_000)
     comparisons = []
@@ -5696,6 +5746,7 @@ def strategy_comparison(path: Path, user_id: str, raw_symbol: Any = None) -> dic
             "relative_to_spy_percent": backtest.get("relative_to_spy_percent"),
             "max_drawdown_percent": backtest.get("max_drawdown_percent"),
             "win_rate_percent": backtest.get("win_rate_percent"),
+            "win_rate_note": backtest.get("win_rate_note"),
             "completed_trades": backtest.get("completed_trades", 0),
             "average_cost_bps": backtest.get("average_modeled_cost_bps_per_side"),
             "out_of_sample_available": holdout.get("available", False),
@@ -7696,8 +7747,8 @@ def _decision_market_rows(db: sqlite3.Connection, symbol: str) -> list[sqlite3.R
             db.execute(
                 "SELECT trading_date, open_micros, high_micros, low_micros, close_micros, volume, fetched_at FROM market_daily "
                 "WHERE symbol = ? AND source = 'alpha_vantage' "
-                "ORDER BY trading_date DESC LIMIT 100",
-                (symbol,),
+                "ORDER BY trading_date DESC LIMIT ?",
+                (symbol, DECISION_HISTORY_LIMIT),
             ).fetchall()
         )
     )
@@ -8103,8 +8154,16 @@ def _fundamental_metrics_as_of(
             continue
     if not eligible:
         return None, None
-    eligible.sort(key=lambda item: (str(item.get("period_end") or ""), str(item.get("filed") or "")))
-    return _fundamental_metrics_from_history(eligible), eligible[-1]
+    periods = _latest_fundamental_periods(eligible)
+    return _fundamental_metrics_from_history(periods), periods[-1]
+
+
+def _fundamental_history_for_backtest(payload: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not payload or not payload.get("available"):
+        return []
+    if payload.get("data_version") == 4:
+        return []
+    return list(payload.get("annual_history_vintages") or payload.get("annual_history") or [])
 
 
 def _serialize_strategy_template(row: sqlite3.Row) -> dict[str, Any]:
@@ -8548,30 +8607,34 @@ def _walk_forward_backtest(
             style, horizon, factors, 15, metrics, closes[index], period, template
         )["score"])
         desired = score >= entry_threshold if not position else score >= exit_threshold
-        if desired and not position:
-            charge(rows[index])
+        next_index = index + 1
+        if position:
+            equity *= Decimal(closes[next_index]) / Decimal(closes[index])
+            exposure_days += 1
+        if desired and not position and next_index < len(rows) - 1:
+            entry_equity = equity
+            charge(rows[next_index])
             position = True
             entries += 1
-            entry_equity = equity
-            entry_date = str(rows[index]["trading_date"])
-            entry_price = closes[index]
-            entry_index = index
+            entry_date = str(rows[next_index]["trading_date"])
+            entry_price = closes[next_index]
+            entry_index = next_index
         elif not desired and position:
-            charge(rows[index])
+            charge(rows[next_index])
             position = False
             completed += 1
             wins += int(equity > entry_equity)
             trade = {
                     "entry_date": entry_date,
-                    "entry_price": decimal_string(entry_price or closes[index]),
-                    "exit_date": rows[index]["trading_date"],
-                    "exit_price": decimal_string(closes[index]),
+                    "entry_price": decimal_string(entry_price or closes[next_index]),
+                    "exit_date": rows[next_index]["trading_date"],
+                    "exit_price": decimal_string(closes[next_index]),
                     "return_percent": _percent((equity / entry_equity - 1) * 100),
                     "outcome": "win" if equity > entry_equity else "loss",
-                    "duration_sessions": index - entry_index + 1 if entry_index is not None else None,
+                    "duration_sessions": next_index - entry_index if entry_index is not None else None,
                 }
             if entry_index is not None and entry_price:
-                trade_rows = rows[entry_index : index + 1]
+                trade_rows = rows[entry_index : next_index + 1]
                 trade["maximum_adverse_excursion_percent"] = _percent(
                     (Decimal(min(int(row["low_micros"]) for row in trade_rows))
                     / Decimal(entry_price) - 1) * 100
@@ -8584,14 +8647,11 @@ def _walk_forward_backtest(
             entry_date = None
             entry_price = None
             entry_index = None
-        if position:
-            equity *= Decimal(closes[index + 1]) / Decimal(closes[index])
-            exposure_days += 1
         peak = max(peak, equity)
         maximum_drawdown = min(maximum_drawdown, equity / peak - 1)
         curve.append(
             {
-                "trading_date": rows[index + 1]["trading_date"],
+                "trading_date": rows[next_index]["trading_date"],
                 "equity": format(equity.quantize(Decimal("0.0001")), "f"),
                 "score": score,
                 "invested": position,
@@ -8612,7 +8672,7 @@ def _walk_forward_backtest(
                 "exit_price": decimal_string(closes[-1]),
                 "return_percent": _percent((equity / entry_equity - 1) * 100),
                 "outcome": "win" if equity > entry_equity else "loss",
-                "duration_sessions": len(rows) - entry_index if entry_index is not None else None,
+                "duration_sessions": len(rows) - 1 - entry_index if entry_index is not None else None,
             }
         if entry_index is not None and entry_price:
             trade_rows = rows[entry_index:]
@@ -8625,10 +8685,10 @@ def _walk_forward_backtest(
                 / Decimal(entry_price) - 1) * 100
             )
         trades.append(trade)
-    benchmark = Decimal(closes[-1]) / Decimal(closes[50]) - 1
+    benchmark = Decimal(closes[-1]) / Decimal(closes[51]) - 1
     spy_return: Decimal | None = None
     if benchmark_rows:
-        sample_start = str(rows[50]["trading_date"])
+        sample_start = str(rows[51]["trading_date"])
         sample_end = str(rows[-1]["trading_date"])
         spy = [
             int(row["close_micros"]) for row in benchmark_rows
@@ -8641,7 +8701,7 @@ def _walk_forward_backtest(
     result = {
         "available": True,
         "walk_forward": True,
-        "sample_start": rows[50]["trading_date"],
+        "sample_start": rows[51]["trading_date"],
         "sample_end": rows[-1]["trading_date"],
         "sample_days": sample_days,
         "strategy_return_percent": _percent(strategy_return * 100),
@@ -8656,7 +8716,17 @@ def _walk_forward_backtest(
         "max_drawdown_percent": _percent(maximum_drawdown * 100),
         "entries": entries,
         "completed_trades": completed,
-        "win_rate_percent": _percent(Decimal(wins) * 100 / Decimal(completed)) if completed else None,
+        "wins": wins,
+        "losses": completed - wins,
+        "win_rate_percent": (
+            _percent(Decimal(wins) * 100 / Decimal(completed))
+            if completed >= MIN_WIN_RATE_TRADES else None
+        ),
+        "win_rate_note": (
+            None
+            if completed >= MIN_WIN_RATE_TRADES
+            else f"At least {MIN_WIN_RATE_TRADES} completed trades are required before displaying win rate."
+        ),
         "exposure_percent": _percent(Decimal(exposure_days) * 100 / Decimal(sample_days)),
         "fee_slippage_bps_per_side": cost_bps,
         "execution_cost_model": "base bps plus daily-range and dollar-volume surcharge",
@@ -8671,12 +8741,14 @@ def _walk_forward_backtest(
         "time_horizon": horizon,
         "point_in_time_fundamentals": True,
         "fundamental_observation_days": fundamental_days,
-        "rules": f"{template['name'] if template else STRATEGY_DEFINITIONS.get(style, STRATEGY_DEFINITIONS['balanced'])['label']} {horizon.replace('_', ' ')}: use only prices and SEC filings known at each close; enter when score >= {entry_threshold} and exit when score < {exit_threshold}.",
-        "assumption": f"Long or cash, fractional exposure, {cost_bps} base bps plus a daily-range and dollar-volume execution surcharge per side; excludes tax.",
+        "backtest_version": "walk-forward-v2-next-close",
+        "execution_timing": "next_session_close",
+        "rules": f"{template['name'] if template else STRATEGY_DEFINITIONS.get(style, STRATEGY_DEFINITIONS['balanced'])['label']} {horizon.replace('_', ' ')}: use only prices and SEC filings known at each close; execute the resulting entry or exit at the following session close.",
+        "assumption": f"Long or cash, fractional exposure, next-session-close execution, {cost_bps} base bps plus a daily-range and dollar-volume execution surcharge per side; excludes tax, opening gaps within the execution session, partial fills, and intraday execution paths.",
         "equity_curve": curve,
         "trades": trades,
     }
-    if len(equity_history) >= 30:
+    if len(equity_history) >= MIN_HOLDOUT_EVALUATED_SESSIONS:
         split_index = max(1, len(equity_history) * 70 // 100)
         baseline_equity = equity_history[split_index - 1]
         holdout_return = equity_history[-1] / baseline_equity - 1
@@ -8727,12 +8799,23 @@ def _walk_forward_backtest(
             )
         result["out_of_sample"] = holdout
     else:
+        split_index = max(1, len(equity_history) * 70 // 100)
+        baseline_row_index = min(len(rows) - 1, 50 + split_index)
+        remaining = MIN_HOLDOUT_EVALUATED_SESSIONS - len(equity_history)
         result["out_of_sample"] = {
             "available": False,
             "method": "chronological_70_30_holdout",
             "parameters_frozen": False,
             "strategy_frozen_at": strategy_frozen_at,
-            "reason": "At least 30 evaluated walk-forward sessions are required for a separate holdout window.",
+            "development_sessions": split_index,
+            "sessions": len(equity_history) - split_index,
+            "sample_start": rows[baseline_row_index]["trading_date"],
+            "sample_end": curve[-1]["trading_date"],
+            "evaluated_sessions": len(equity_history),
+            "required_evaluated_sessions": MIN_HOLDOUT_EVALUATED_SESSIONS,
+            "remaining_sessions": remaining,
+            "selection_warning": "The final 30% is reserved for a chronological holdout. Reusing it to tune parameters turns it into development data.",
+            "reason": f"Collect {remaining} more evaluated session(s) before reporting a 60-session holdout.",
         }
     if include_sensitivity:
         variants = []
@@ -8754,6 +8837,7 @@ def _walk_forward_backtest(
                     "max_drawdown_percent": scenario.get("max_drawdown_percent"),
                     "completed_trades": scenario.get("completed_trades"),
                     "win_rate_percent": scenario.get("win_rate_percent"),
+                    "win_rate_note": scenario.get("win_rate_note"),
                 }
             )
         returns = [Decimal(str(item["strategy_return_percent"])) for item in variants]
@@ -9691,10 +9775,7 @@ def generate_decision(path: Path, user_id: str, raw_symbol: Any) -> dict[str, An
         active_template = _active_strategy_template_from_db(db, user_id)
         position = _position_decision_context(db, user_id, symbol, profile)
         fundamentals = _sec_cached(db, f"fundamentals:{symbol}")
-        fundamental_history = (
-            list(fundamentals.get("annual_history") or [])
-            if fundamentals and fundamentals.get("available") else []
-        )
+        fundamental_history = _fundamental_history_for_backtest(fundamentals)
         fundamental_metrics = (
             dict(fundamentals.get("metrics") or {})
             if fundamentals and fundamentals.get("available") else None
@@ -10065,10 +10146,7 @@ def decision_bundle(path: Path, user_id: str, raw_symbol: Any) -> dict[str, Any]
         active_template = _active_strategy_template_from_db(db, user_id)
         context_runs = _decision_rows(db, user_id, limit=1_000_000)
         fundamentals = _sec_cached(db, f"fundamentals:{symbol}")
-        fundamental_history = (
-            list(fundamentals.get("annual_history") or [])
-            if fundamentals and fundamentals.get("available") else []
-        )
+        fundamental_history = _fundamental_history_for_backtest(fundamentals)
         backtest = _walk_forward_backtest(
             rows,
             profile["strategy_style"],

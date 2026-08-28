@@ -4,7 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Stock Thesis Ledger 是本地优先、逻辑透明、支持 Web 与 iOS 的股票研究和纯模拟复盘工作区。">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Stock Thesis Ledger — 先证据，后行动">
+  <meta property="og:description" content="本地优先、逻辑透明、支持 Web 与 iOS 的股票研究和纯模拟复盘工作区。">
+  <meta property="og:image" content="https://leocs777.github.io/stock-thesis-ledger/assets/github-hero-v1.png">
+  <meta property="og:url" content="https://leocs777.github.io/stock-thesis-ledger/zh-CN/">
+  <meta name="twitter:card" content="summary_large_image">
   <title>Stock Thesis Ledger — 先证据，后行动</title>
+  <link rel="canonical" href="https://leocs777.github.io/stock-thesis-ledger/zh-CN/">
+  <link rel="alternate" hreflang="en" href="https://leocs777.github.io/stock-thesis-ledger/">
+  <link rel="alternate" hreflang="zh-Hans" href="https://leocs777.github.io/stock-thesis-ledger/zh-CN/">
+  <link rel="alternate" hreflang="x-default" href="https://leocs777.github.io/stock-thesis-ledger/">
   <link rel="icon" href="../assets/investor-lab-logo.png">
   <link rel="stylesheet" href="../styles.css">
 </head>
@@ -50,11 +60,11 @@
     </section>
 
     <section class="shell section">
-      <div class="section-head reveal"><div><div class="eyebrow">版本 0.2.0</div><h2>安全与证据质量清晰可见。</h2></div><p>第二期把浏览器安全策略、数据源价格分歧、日内缺失行情、期权报价异常和恢复准备度直接呈现在产品中，而不是藏在运维流程里。</p></div>
+      <div class="section-head reveal"><div><div class="eyebrow">版本 0.2.1</div><h2>研究历史保持诚实。</h2></div><p>SEC 申报时点版本、次日收盘执行、双边成本与最低样本门槛，让回测证据对应当时真正已知且可执行的信息。</p></div>
       <div class="feature-grid">
-        <article class="card reveal"><h3>强化访问边界</h3><p>严格内容安全策略、接口限流、哈希安全事件、异常登录提醒，以及可选的 Cloudflare Access 身份边界。</p></article>
-        <article class="card reveal"><h3>先检查质量，再评分</h3><p>跨数据源价格校验、日线完整性、正常交易时段覆盖率与期权价差和流动性诊断，会说明证据何时尚不足以支持决策。</p></article>
-        <article class="card reveal"><h3>加密恢复</h3><p>经过验证的 SQLite 快照可以使用 AES-256 加密，并提前进行不会覆盖现有数据库的恢复演练。</p></article>
+        <article class="card reveal"><h3>保留申报时点版本</h3><p>原始与修订后的 SEC 事实都保留；历史评估只选择当时已经公开的最新申报。</p></article>
+        <article class="card reveal"><h3>使用可执行时点</h3><p>收盘后形成的信号在下一交易日收盘执行，已完成交易同时计入买入和卖出成本。</p></article>
+        <article class="card reveal"><h3>样本不足不下结论</h3><p>至少 200 个评估交易日才显示留出结果，至少完成 10 笔交易才显示胜率。</p></article>
       </div>
     </section>
 
@@ -63,7 +73,7 @@ cd stock-thesis-ledger
 ./setup.sh
 python3 app.py</pre></div><p class="fine-print">需要 Python 3.10+。界面可在无数据源密钥时运行，但刷新真实证据需要相应的数据提供商账户。使用前请阅读免责声明。</p></section>
   </main>
-  <footer><div class="shell footer-grid"><span>AGPL-3.0-only · Stock Thesis Ledger v0.2.0</span><div class="footer-links"><a href="privacy/">隐私</a><a href="support/">支持</a><a href="https://github.com/Leocs777/stock-thesis-ledger">源代码</a></div></div></footer>
+  <footer><div class="shell footer-grid"><span>AGPL-3.0-only · Stock Thesis Ledger v0.2.1</span><div class="footer-links"><a href="privacy/">隐私</a><a href="support/">支持</a><a href="https://github.com/Leocs777/stock-thesis-ledger">源代码</a></div></div></footer>
   <script src="../site.js"></script>
 </body>
 </html>

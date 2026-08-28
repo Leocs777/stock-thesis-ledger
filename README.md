@@ -11,7 +11,7 @@ Paper-only execution boundary.
 
 [![CI](https://github.com/Leocs777/stock-thesis-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/Leocs777/stock-thesis-ledger/actions/workflows/ci.yml)
 [![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-22313f.svg)](LICENSE)
-[![Release candidate: v0.2.0](https://img.shields.io/badge/release_candidate-v0.2.0-1d4ed8.svg)](#v020-security-contracts-and-data-quality)
+[![Release: v0.2.1](https://img.shields.io/badge/release-v0.2.1-1d4ed8.svg)](https://github.com/Leocs777/stock-thesis-ledger/releases/tag/v0.2.1)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-0f766e.svg)](#quick-start)
 [![Paper only](https://img.shields.io/badge/brokerage-Paper_only-e85d2a.svg)](#safety-boundary)
 
@@ -43,91 +43,29 @@ evidence; the journal, worksheets, sync, and paper ledger remain local.
 [Run a Paper validation campaign](docs/paper-validation-protocol.md) ·
 [Understand the safety model](#safety-boundary)
 
-## v0.2.0 security, contracts, and data quality
+The repository name makes the stock-research scope explicit. Inside the product,
+**Investment Thesis Ledger** names the core workflow. The compatible Web/iOS
+runtime name remains **Investor Lab**, so bundle identifiers, SQLite filenames,
+environment variables, Keychain services, and Xcode paths retain that name.
 
-Version 0.2.0 removes inline Web scripts and styles and enforces a strict CSP,
-adds endpoint-class request limits, privacy-preserving security audits, and a
-visible warning for a new network/device login. An optional Cloudflare Access
-mode binds the authenticated gateway email to the local account.
+Latest changes: [CHANGELOG.md](CHANGELOG.md) ·
+[all releases](https://github.com/Leocs777/stock-thesis-ledger/releases)
 
-The Web and iOS route catalog is versioned and checked in CI. Daily research now
-labels raw versus adjusted history and checks price discontinuities; refreshed
-research compares the cached close with the latest IEX observation. Day Trade
-reports missing regular-session minutes, while Options reports crossed markets,
-wide spreads, quote coverage, and liquidity. A zero-dependency command creates
-AES-encrypted offsite backups and runs a non-destructive restore drill. See the
-[Phase 2 operations guide](docs/phase-2-operations.md).
+## What it includes
 
-## v0.1.6 correctness and session security
-
-Version 0.1.6 fixes portfolio math across equity and option positions, applies
-the standard 100-share option contract multiplier consistently, records a
-calculation version in generated reports, and computes intraday VWAP and
-relative volume from regular-session, time-matched observations.
-
-Sessions are now bound to their Web or iOS transport and registered device.
-The first account becomes the local vault owner; shared provider, broker, backup,
-restore, and health-maintenance controls are owner-only. Password rotation and
-sign-out-all-devices invalidate existing sessions. Web and iOS preserve the
-signed-in state when a recoverable panel request or logout request fails.
-
-Version 0.1.5 added one-click whole-watchlist refresh, per-symbol refresh,
-observed IEX prices, shorter workspace navigation, and the shared product logo.
-See the [changelog](CHANGELOG.md) for release details.
-
-## v0.1.4 guided workflow
-
-Version 0.1.4 adds the same four-step core loop to Web and iOS: choose a stock,
-refresh evidence and score it, prepare a Paper-only order, and review the
-outcome. The chosen ticker carries into the Paper ticket. Advanced scanners,
-alerts, scenarios, comparisons, reports, and data-quality tools are still
-available, but stay collapsed until needed. Chinese localization now covers
-static interface copy, runtime statuses, and every literal server validation
-error through an automated Web/iOS coverage check.
-
-## v0.1.3 usability
-
-Version 0.1.3 replaces typed Paper-order confirmation phrases with explicit
-checkbox acknowledgements in Web and iOS. Paper-only routing, local notional
-and loss limits, synchronized-account checks, and idempotent client order IDs
-remain enforced. Older clients can still use their confirmation phrases without
-matching uppercase exactly.
-
-## v0.1.2 hotfix
-
-Version 0.1.2 fixes macOS TLS verification for python.org Python installations
-whose bundled CA path is empty. The server selects the maintained macOS system
-CA bundle without disabling certificate verification or replacing an explicit
-operator-provided bundle. This restores Alpha Vantage, Alpaca Market Data, and
-Alpaca Paper API connections when the application is started directly with
-`python3 app.py`.
-
-## v0.1.1 scope
-
-The public build is a transparent local reference implementation:
-deterministic decision-v4.1 scoring, versioned thesis history, portfolio/options/
-day-trade Paper workflows, and synchronized Web/iOS review. It is intended for
-inspection, reproducibility, and forward Paper validation, not for performance
-claims or unattended trading.
-
-Version 0.1.1 closes the validation operations loop: it exposes provider and
-schedule blockers, a five-symbol campaign pool, review backlog, recent failures,
-one-click validation cycles, and exportable Markdown reports on Web and iOS.
-The scheduler rotates cost-controlled option snapshots, creates missing daily
-and weekly reports, verifies daily backups, and records samples only when real
-provider evidence exists. Operational blockers can appear as local browser and
-iPhone notifications without an APNs worker.
-
-The internal Web/iOS product name remains **Investor Lab** in v0.1.1. Existing
-bundle identifiers, SQLite filenames, backup formats, environment variables,
-Keychain services, Xcode paths, and local migration identifiers retain that name
-for compatibility. Public repository and documentation branding is
-**Stock Thesis Ledger**.
-
-The descriptive repository name makes the asset class explicit. Inside the
-product, **Investment Thesis Ledger** names the core workflow: capture a thesis,
-counter-evidence, invalidation rule, frozen strategy version, and later outcome
-as one reviewable record.
+- Reproducible stock research from cached daily prices and public SEC filings,
+  including factor scores, evidence, invalidation conditions, scenario price
+  levels, and decision history.
+- A synchronized watchlist, append-only paper ledger, journal, price alerts,
+  portfolio exposure, stress scenarios, and review statistics.
+- Options worksheets for one-to-six-leg payoff scenarios, chain filters,
+  indicative Greeks, expiration attention, and paper-plan reviews.
+- Day-trade planning with user-defined risk limits, VWAP/opening-range
+  observations, no-trade conditions, session replay, and execution review.
+- Separate equity and option lots throughout portfolio calculations, including
+  option contract multipliers, account/sector exposure, and Paper notional.
+- Alpaca Paper balance, position, order, and fill mirroring, with Paper-order
+  actions behind explicit acknowledgements and risk checks.
 
 ## Product tour
 
@@ -159,39 +97,6 @@ review surface.
 The iOS app uses the same authenticated account and incremental revision cursor.
 It keeps the bearer token in device-only Keychain storage and adds local review,
 filing-change, and option-expiration notifications.
-
-## What it includes
-
-- Reproducible stock research from cached daily prices and public SEC filings,
-  including factor scores, evidence, invalidation conditions, scenario price
-  levels, and decision history.
-- A synchronized watchlist, append-only paper ledger, journal, price alerts,
-  portfolio exposure, stress scenarios, and review statistics.
-- Options worksheets for one-to-six-leg payoff scenarios, chain filters,
-  indicative Greeks, expiration attention, and paper-plan reviews.
-- Day-trade planning with user-defined risk limits, VWAP/opening-range
-  observations, no-trade conditions, session replay, and execution review.
-- Regular-session, time-matched VWAP and relative volume, a New York market
-  clock, and clock-aware replay windows that make the evidence scope explicit.
-- Separate equity and option lots throughout portfolio calculations, including
-  option contract multipliers, account/sector exposure, and Paper notional.
-- Alpaca Paper balance, position, order, and fill mirroring, with Paper-order
-  submit, replace, and cancel actions behind explicit acknowledgements and risk checks.
-
-## Safety boundary
-
-- The brokerage host is fixed to `paper-api.alpaca.markets`.
-- No live-account brokerage host or real-money order route is implemented.
-- Provider credentials are never returned to Web or iOS clients. On macOS they
-  can be stored in Keychain; process environment variables are the portable
-  alternative.
-- The server binds to `127.0.0.1` by default. Do not expose the development
-  server directly to the public internet.
-- Local SQLite files, backups, logs, credentials, signing material, and build
-  products are ignored by Git.
-
-See [Security and threat model](docs/security-and-threat-model.md) before
-changing any authentication, networking, secret-storage, or broker code.
 
 ## Architecture
 
@@ -261,44 +166,7 @@ to inspect a compact, fabricated decision record without creating an account or
 configuring a provider. Its prices, ticker, returns, and dates are demonstrative
 only and are not historical performance.
 
-## Configuration
-
-The app reads the **process environment**. It does not automatically parse or
-load a `.env` file. [`.env.example`](.env.example) is a reference showing
-the supported settings and safe local defaults.
-
-Pass variables to the process explicitly:
-
-```bash
-INVESTORLAB_SEC_CONTACT=you@example.com \
-ALPHAVANTAGE_API_KEY=replace_me \
-python3 app.py
-```
-
-Never commit real values. Common settings are:
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `INVESTORLAB_DB` | `data/investor-lab.sqlite3` | Local SQLite path |
-| `INVESTORLAB_HOST` | `127.0.0.1` | Bind address |
-| `INVESTORLAB_PORT` | `8000` | HTTP port |
-| `INVESTORLAB_ALLOW_REGISTRATION` | `0` | Allow accounts after the first one |
-| `INVESTORLAB_SECURE_COOKIE` | `0` | Mark browser cookie Secure; use `1` behind HTTPS |
-| `INVESTORLAB_PUBLIC_URL` | empty | HTTPS URL reported to clients |
-| `INVESTORLAB_ACCESS_GATEWAY` | empty | Set to `cloudflare` only behind a configured Access policy |
-| `INVESTORLAB_TRUST_PROXY` | `0` | Trust proxy identity/address headers; enable only for the controlled gateway |
-| `INVESTORLAB_SEC_CONTACT` | signed-in email | Contact declared to SEC EDGAR |
-| `INVESTORLAB_MARKET_CACHE_MINUTES` | `720` | Daily-price cache lifetime |
-| `INVESTORLAB_MARKET_HISTORY` | `compact` | Alpha Vantage `compact` or `full` output |
-| `INVESTORLAB_ADJUSTED_DAILY` | `0` | Request adjusted history when the plan permits |
-| `INVESTORLAB_INTRADAY_COLLECTION` | `0` | Enable bounded background intraday collection |
-| `INVESTORLAB_INTRADAY_SYMBOL_LIMIT` | `8` | Watchlist collection cap |
-| `INVESTORLAB_BACKUP_RETENTION` | `30` | Number of verified daily backups retained |
-| `ALPHAVANTAGE_API_KEY` | empty | Optional daily-price and earnings data |
-| `ALPACA_API_KEY_ID` | empty | Optional Alpaca market/Paper credential |
-| `ALPACA_API_SECRET_KEY` | empty | Optional Alpaca market/Paper secret |
-
-## Data sources
+## Data sources and costs
 
 | Source | Account required | Used for |
 | --- | --- | --- |
@@ -311,6 +179,35 @@ Free tiers, request limits, data coverage, terms, and redistribution rights can
 change. Verify each provider's current agreement before public or commercial
 deployment. SEC asks automated clients to identify themselves and use fair
 access practices; Stock Thesis Ledger caches SEC reads for 24 hours.
+
+Python, SQLite, the Web client, and local calculations have no recurring
+application-infrastructure fee. Apple Developer membership, authenticated HTTPS
+tunnels, market-data plans, display or redistribution licenses, hosting,
+monitoring, and legal review may add cost.
+
+## Configuration
+
+The app reads the **process environment** and does not automatically load a
+`.env` file. Never commit real values.
+
+```bash
+INVESTORLAB_SEC_CONTACT=you@example.com \
+ALPHAVANTAGE_API_KEY=replace_me \
+python3 app.py
+```
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `INVESTORLAB_DB` | `data/investor-lab.sqlite3` | Local SQLite path |
+| `INVESTORLAB_HOST` | `127.0.0.1` | Bind address |
+| `INVESTORLAB_PORT` | `8000` | HTTP port |
+| `INVESTORLAB_SEC_CONTACT` | signed-in email | SEC EDGAR contact |
+| `ALPHAVANTAGE_API_KEY` | empty | Optional daily-price and earnings data |
+| `ALPACA_API_KEY_ID` | empty | Optional Alpaca market/Paper credential ID |
+| `ALPACA_API_SECRET_KEY` | empty | Optional Alpaca market/Paper secret |
+
+See [Configuration reference](docs/configuration.md) for every supported setting,
+safe defaults, HTTPS gateway controls, collection limits, and history depth.
 
 ## iOS
 
@@ -347,6 +244,21 @@ python3 scripts/paper_validation.py freeze
 python3 scripts/paper_validation.py status
 python3 scripts/paper_validation.py report
 ```
+
+## Safety boundary
+
+- The brokerage host is fixed to `paper-api.alpaca.markets`; no live-account
+  brokerage host or real-money order route is implemented.
+- Provider credentials are never returned to Web or iOS clients. On macOS they
+  can be stored in Keychain; process environment variables are the portable
+  alternative.
+- The server binds to `127.0.0.1` by default. Do not expose the development
+  server directly to the public internet.
+- Local databases, backups, logs, credentials, signing material, and build
+  products are ignored by Git.
+
+Read [Security and threat model](docs/security-and-threat-model.md) before
+changing authentication, networking, secret storage, or broker code.
 
 ## Test and validate
 

@@ -1,1 +1,1 @@
-Version 0.2.0 adds strict Web security policy, privacy-preserving login and sensitive-action audits, unusual-device warnings, versioned Web/iOS API contracts, deeper daily/intraday/options data-quality checks, and encrypted offsite backup drills.
+Version 0.2.1 preserves original and amended SEC facts in historical analysis, executes end-of-day signals at the next session close, counts entry and exit costs in each trade, strengthens holdout minimums, and hides win rates for very small samples.

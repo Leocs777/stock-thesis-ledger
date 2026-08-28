@@ -2,7 +2,7 @@
   "_demo": true,
   "_notice": "Fabricated example for schema inspection only. Not market history, performance, or advice.",
   "symbol": "DEMO",
-  "model_version": "decision-v4.1",
+  "model_version": "decision-v4.1.1",
   "trading_date": "2026-01-30",
   "signal": "watch",
   "signal_label": "Watch / wait",

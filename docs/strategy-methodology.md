@@ -1,6 +1,6 @@
 # Strategy methodology
 
-Status: decision-v4.1, Stock Thesis Ledger v0.1.0.
+Status: decision-v4.1.1, Stock Thesis Ledger v0.2.1.
 
 This document describes the implemented deterministic rules in `app.py`. It is
 a reproducibility specification, not evidence that the rules predict returns.
@@ -56,6 +56,10 @@ factors, then each raw score is scaled into its assigned maximum.
 
 SEC facts are converted into transparent 0-100 raw factor cards before strategy
 weighting:
+
+Original and amended SEC facts are retained by filing date. A historical run
+reconstructs each fiscal period from the newest fact vintage that was public on
+that date; the current research view shows only the latest vintage per period.
 
 - **Growth:** average of available revenue and net-income growth. Each receives
   100 at >= 15%, 80 at >= 8%, 60 at >= 3%, 40 at >= 0%, otherwise 0.
@@ -190,9 +194,10 @@ At least 70 daily bars are required. Starting after 50 bars, each step:
 1. computes factors using only bars available through that close;
 2. selects only SEC fundamentals whose `filed` date is on or before that
    close;
-3. enters a long-or-cash state at score >= 75;
+3. requests a long-or-cash state at score >= 75;
 4. remains invested while score >= 55; and
-5. applies the next close-to-close return only while invested.
+5. executes a changed state at the following session close, then applies later
+   close-to-close returns only while invested.
 
 The simulation uses neutral 15-point position fit, fractional exposure, and
 forces an open state closed at the final cached bar. It reports return, exposure,
@@ -206,9 +211,9 @@ proof of skill.
 
 ### Frozen chronological holdout
 
-When the walk-forward evaluation contains at least 30 scored sessions, the
+When the walk-forward evaluation contains at least 200 scored sessions, the
 first 70% form the development segment and the final 30% form a chronological
-holdout. The holdout reports its own dates, session count, strategy return,
+holdout of at least 60 sessions. The holdout reports its own dates, session count, strategy return,
 buy-and-hold return, and aligned SPY comparison only when the complete current
 context was recorded on or before the holdout boundary. That context is the
 model version, `full-context-v1` freeze protocol, style, horizon, and immutable
@@ -237,6 +242,10 @@ adds:
 Total modeled cost is capped at 500 bps per side and excludes tax. This is a
 conservative heuristic, not a broker fill model.
 
+Per-trade returns and outcomes include both the entry and exit cost events.
+Completed-trade counts remain visible at every sample size, but win rate is not
+displayed until at least 10 trades are complete.
+
 ### Parameter sensitivity
 
 The same point-in-time sample is rerun with:
@@ -253,17 +262,17 @@ validation; it is only a fragility check.
 
 ## Non-ML boundary and limitations
 
-decision-v4.1 is deterministic rules code. It has no fitted coefficients,
+decision-v4.1.1 is deterministic rules code. It has no fitted coefficients,
 training set, optimizer, learned ranking, language-model input, sentiment model,
 or automatic parameter search. The academic sources below explain why trend,
 momentum, valuation, and profitability are reasonable research dimensions; the
 implementation is not a reproduction of those papers and inherits none of
 their reported performance.
 
-Other limitations include a small locally cached universe, at most 100 daily
+Other limitations include a small locally cached universe, at most 320 daily
 bars per decision query, no survivorship-bias correction, optional rather than
-universal adjusted-price coverage, raw volume in adjusted mode, end-of-day
-execution assumptions, no tax, and incomplete industry normalization. Review
+universal adjusted-price coverage, raw volume in adjusted mode, next-session-
+close execution without intraday fills or partial fills, no tax, and incomplete industry normalization. Review
 [the Paper validation protocol](paper-validation-protocol.md)
 before making any performance statement.
 

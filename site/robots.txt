@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://leocs777.github.io/stock-thesis-ledger/sitemap.xml

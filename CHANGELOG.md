@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.1 - 2026-08-27
+
+- Preserve original and amended SEC fact vintages for point-in-time backtests.
+- Execute end-of-day signals at the following session close and include both
+  entry and exit costs in per-trade outcomes.
+- Require 200 evaluated sessions before reporting a 60-session chronological
+  holdout, and hide win-rate percentages below 10 completed trades.
+- Streamline the bilingual project overview, publish a dedicated configuration
+  reference, and add citation metadata.
+- Add social preview, canonical, language-alternate, robots, and sitemap metadata
+  to the bilingual GitHub Pages site.
+
 ## 0.2.0 - 2026-08-26
 
 - Split security, API contracts, market-data quality, and encrypted backups into

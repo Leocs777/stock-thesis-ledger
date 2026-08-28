@@ -1709,6 +1709,8 @@ private struct DashboardView: View {
                             value: "\(holdout.strategyReturnPercent ?? "—")%",
                             detail: "\(holdout.sessions ?? 0) \(labLocalized("sessions")) · \(labLocalized("parameters frozen"))"
                         )
+                    } else if let remaining = bundle.backtest.outOfSample?.remainingSessions {
+                        LabEmptyLine(text: "\(remaining) \(labLocalized("more evaluated sessions before a 60-session holdout"))")
                     } else if let reason = bundle.backtest.outOfSample?.reason {
                         LabEmptyLine(text: labLocalized(reason))
                     }
@@ -1722,6 +1724,19 @@ private struct DashboardView: View {
                             label: "SPY benchmark",
                             value: bundle.backtest.benchmarkAvailable == true ? "\(bundle.backtest.spyReturnPercent ?? "—")%" : "Not cached",
                             detail: bundle.backtest.benchmarkAvailable == true ? "Relative \(bundle.backtest.relativeToSPYPercent ?? "—")%" : "Refresh SPY daily bars"
+                        )
+                    }
+                    HStack(spacing: 10) {
+                        LabMetricCard(
+                            label: "Execution timing",
+                            value: "Next session close",
+                            detail: "Signal at prior close; costs apply on entry and exit."
+                        )
+                        LabMetricCard(
+                            label: "Trade sample",
+                            value: "\(bundle.backtest.completedTrades ?? 0) \(labLocalized("completed trades"))",
+                            detail: bundle.backtest.winRatePercent.map { "\($0)% \(labLocalized("Win rate"))" }
+                                ?? "Win rate hidden until 10 completed trades."
                         )
                     }
                     if let curve = bundle.backtest.equityCurve, curve.count > 1 {
@@ -6626,7 +6641,7 @@ private struct DecisionCenter: Decodable {
     }
 
     static let empty = DecisionCenter(
-        modelVersion: "decision-v4.1",
+        modelVersion: "decision-v4.1.1",
         latest: [],
         recentChanges: [],
         settings: .default
@@ -6884,6 +6899,7 @@ private struct DecisionBacktest: Decodable {
     let relativeReturnPercent: String?
     let maxDrawdownPercent: String?
     let completedTrades: Int?
+    let winRatePercent: String?
     let exposurePercent: String?
     let rules: String?
     let assumption: String?
@@ -6903,6 +6919,7 @@ private struct DecisionBacktest: Decodable {
         case relativeReturnPercent = "relative_return_percent"
         case maxDrawdownPercent = "max_drawdown_percent"
         case completedTrades = "completed_trades"
+        case winRatePercent = "win_rate_percent"
         case exposurePercent = "exposure_percent"
         case spyReturnPercent = "spy_return_percent"
         case relativeToSPYPercent = "relative_to_spy_percent"
@@ -6925,9 +6942,11 @@ private struct BacktestHoldout: Decodable {
     let strategyReturnPercent: String?
     let relativeToSPYPercent: String?
     let reason: String?
+    let remainingSessions: Int?
 
     enum CodingKeys: String, CodingKey {
         case available, method, sessions, reason
+        case remainingSessions = "remaining_sessions"
         case parametersFrozen = "parameters_frozen"
         case sampleStart = "sample_start"
         case sampleEnd = "sample_end"

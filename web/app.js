@@ -745,8 +745,15 @@
       "full sample": "全样本",
       "OOS": "时间外",
       "Holdout needs more data": "时间外样本需要更多数据",
+      "more evaluated sessions before a 60-session holdout": "个已评估交易日后才能报告 60 日时间外样本",
       "This strategy version was not frozen before the candidate holdout began. Keep it unchanged and collect future bars before treating results as out-of-sample.": "该策略版本在候选时间外窗口开始前尚未冻结。请保持配置不变并收集未来 K 线，再将结果视为时间外验证。",
       "No automatic leader is selected from holdout results. Using a holdout to choose a winner turns it into model-selection data.": "系统不会根据时间外结果自动选出领先策略；使用该窗口挑选赢家，会使其变成模型选择数据。",
+      "Execution timing": "成交时点",
+      "Next session close": "下一交易日收盘",
+      "Signal at prior close; costs apply on entry and exit.": "上一收盘生成信号；入场和出场都计入成本。",
+      "Trade sample": "交易样本",
+      "completed trades": "笔已完成交易",
+      "Win rate hidden until 10 completed trades.": "完成交易少于 10 笔，不显示胜率。",
       "Buy and hold": "买入并持有",
       "Scenario drawdown": "情景回撤",
       "Generate again after a new bar, profile change, or position change to build history.": "在出现新 K 线、偏好变更或持仓变化后再次生成，以建立历史。",
@@ -1661,11 +1668,18 @@
       const backtest = decision.backtest;
       if (backtest.available) {
         const holdout = backtest.out_of_sample || {};
+        const holdoutDetail = holdout.available
+          ? `${holdout.sessions} ${t("sessions")} · ${holdout.sample_start} to ${holdout.sample_end}`
+          : Number.isInteger(holdout.remaining_sessions)
+            ? `${holdout.remaining_sessions} ${t("more evaluated sessions before a 60-session holdout")}`
+            : (holdout.reason || "Generate a new decision and collect future bars for a frozen holdout.");
         $("decisionBacktest").innerHTML = [
-          ["Frozen holdout", holdout.available ? `${Number(holdout.strategy_return_percent) >= 0 ? "+" : ""}${holdout.strategy_return_percent}%` : "Needs more data", holdout.available ? `${holdout.sessions} ${t("sessions")} · ${holdout.sample_start} to ${holdout.sample_end}` : (holdout.reason || "Generate a new decision and collect future bars for a frozen holdout.")],
+          ["Frozen holdout", holdout.available ? `${Number(holdout.strategy_return_percent) >= 0 ? "+" : ""}${holdout.strategy_return_percent}%` : "Needs more data", holdoutDetail],
           ["Full-sample return", `${Number(backtest.strategy_return_percent) >= 0 ? "+" : ""}${backtest.strategy_return_percent}%`, `${backtest.sample_start} to ${backtest.sample_end}`],
           ["SPY benchmark", backtest.benchmark_available ? `${Number(backtest.spy_return_percent) >= 0 ? "+" : ""}${backtest.spy_return_percent}%` : "Not cached", backtest.benchmark_available ? `Relative ${backtest.relative_to_spy_percent}%` : "Refresh SPY daily bars"],
-          ["Scenario drawdown", `${backtest.max_drawdown_percent}%`, `${backtest.completed_trades} completed trades · ${backtest.exposure_percent}% invested`]
+          ["Scenario drawdown", `${backtest.max_drawdown_percent}%`, `${backtest.exposure_percent}% invested`],
+          ["Execution timing", "Next session close", "Signal at prior close; costs apply on entry and exit."],
+          ["Trade sample", `${backtest.completed_trades} ${t("completed trades")}`, backtest.win_rate_percent === null ? "Win rate hidden until 10 completed trades." : `${backtest.win_rate_percent}% ${t("Win rate")}`]
         ].map(([label, value, detail]) => `<div class="status-box"><span class="micro-label">${safe(t(label))}</span><strong>${safe(t(value))}</strong><p>${safe(t(detail))}</p></div>`).join("");
         renderLineChart("decisionBacktestChart", backtest.equity_curve || [], "equity");
         $("decisionBacktestTrades").innerHTML = (backtest.trades || []).map(trade => `<tr><td>${safe(trade.entry_date)}<br><small>${money(trade.entry_price)}</small></td><td>${safe(trade.exit_date)}<br><small>${money(trade.exit_price)}</small></td><td class="${Number(trade.return_percent) < 0 ? "negative" : "positive"}">${Number(trade.return_percent) >= 0 ? "+" : ""}${safe(trade.return_percent)}%</td><td>${safe(t(trade.outcome))}<br><small>MAE ${safe(trade.maximum_adverse_excursion_percent ?? "—")}% · MFE ${safe(trade.maximum_favorable_excursion_percent ?? "—")}% · ${safe(trade.duration_sessions ?? "—")} sessions</small></td></tr>`).join("");

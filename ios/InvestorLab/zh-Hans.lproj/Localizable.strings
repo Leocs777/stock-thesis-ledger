@@ -330,8 +330,15 @@
 "holdout sessions" = "个时间外样本交易日";
 "full sample" = "全样本";
 "Holdout needs more data" = "时间外样本需要更多数据";
+"more evaluated sessions before a 60-session holdout" = "个已评估交易日后才能报告 60 日时间外样本";
 "This strategy version was not frozen before the candidate holdout began. Keep it unchanged and collect future bars before treating results as out-of-sample." = "该策略版本在候选时间外窗口开始前尚未冻结。请保持配置不变并收集未来 K 线，再将结果视为时间外验证。";
 "No automatic leader is selected from holdout results. Using a holdout to choose a winner turns it into model-selection data." = "系统不会根据时间外结果自动选出领先策略；使用该窗口挑选赢家，会使其变成模型选择数据。";
+"Execution timing" = "成交时点";
+"Next session close" = "下一交易日收盘";
+"Signal at prior close; costs apply on entry and exit." = "上一收盘生成信号；入场和出场都计入成本。";
+"Trade sample" = "交易样本";
+"completed trades" = "笔已完成交易";
+"Win rate hidden until 10 completed trades." = "完成交易少于 10 笔，不显示胜率。";
 "Web and iPhone read the same append-only local history. Newest paper decisions appear first." = "Web 和 iPhone 读取同一份只追加本地历史。最新模拟决策优先显示。";
 "What happened?" = "发生了什么？";
 "Win rate" = "胜率";

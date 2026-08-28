@@ -8,7 +8,7 @@
 
 [![CI](https://github.com/Leocs777/stock-thesis-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/Leocs777/stock-thesis-ledger/actions/workflows/ci.yml)
 [![许可证：AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-22313f.svg)](LICENSE)
-[![候选版本：v0.2.0](https://img.shields.io/badge/release_candidate-v0.2.0-1d4ed8.svg)](CHANGELOG.md)
+[![正式版本：v0.2.1](https://img.shields.io/badge/release-v0.2.1-1d4ed8.svg)](https://github.com/Leocs777/stock-thesis-ledger/releases/tag/v0.2.1)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-0f766e.svg)](#快速开始)
 [![仅限模拟交易](https://img.shields.io/badge/brokerage-Paper_only-e85d2a.svg)](#安全边界)
 
@@ -40,29 +40,13 @@ Stock Thesis Ledger 把一次投资判断保存为可复核的记录：输入数
 [查看中英双语项目网站](https://leocs777.github.io/stock-thesis-ledger/zh-CN/)；网站同时提供
 可用于 TestFlight/App Store Connect 的中英文隐私政策和支持页面。
 
-## v0.2.0 第二期更新
+仓库名称强调股票研究范围；产品中的 **Investment Thesis Ledger** 指记录论点、反证、
+失效条件、策略版本和结果的核心流程。为保持兼容，Web/iOS 内部运行名称继续使用
+**Investor Lab**，现有 bundle id、SQLite 文件名、环境变量、Keychain service 和 Xcode
+路径不改名。
 
-- Web 脚本和样式全部改为外部静态资源，严格 CSP 不再允许 `unsafe-inline`。
-- 新增分接口限流、只保存哈希标识的安全审计，以及新网络/设备登录提醒。
-- 提供可选 Cloudflare Access 身份绑定；网关邮箱必须与本地账户一致。
-- Web/iOS 共用版本化 API 契约，并在 CI 检查跨端路由与 CSP。
-- 数据质量增加日线复权/异常跳变、跨来源价格差、日内缺失分钟、期权交叉报价和过宽价差。
-- 新增加密异地备份和只读恢复演练，不覆盖当前数据库。详见[第二期运维指南](docs/phase-2-operations.md)。
-
-## v0.1.6 更新
-
-- 股票与期权持仓分开核算，并统一采用每张期权合约 100 股的乘数计算成本、市值、权重、
-  行业暴露和 Paper 订单名义金额。
-- 期权情景保存报价到期日和计算版本；生成的研究报告会注明计算版本。
-- 日内交易 VWAP 与相对成交量只使用美东常规交易时段内、截至同一分钟的可比数据，
-  并使用纽约交易日和市场时钟控制回放窗口。
-- Web/iOS 会话绑定到客户端类型和设备；支持修改密码、退出所有设备、强化登录限速。
-- 第一个账户成为本地保险库所有者；数据源、Paper 券商、备份、恢复和系统维护等共享控制
-  仅对所有者开放。
-- 提升中文覆盖、键盘焦点、弱文字对比度和非颜色风险提示；Web 与 iOS 的可恢复请求失败
-  不再误清除登录状态。
-
-完整历史见 [CHANGELOG.md](CHANGELOG.md)。
+最新变更见 [CHANGELOG.md](CHANGELOG.md) ·
+[全部 Release](https://github.com/Leocs777/stock-thesis-ledger/releases)
 
 ## 功能概览
 
@@ -181,26 +165,20 @@ python3 app.py
 
 ## 配置
 
-应用读取进程环境变量，不会自动加载 `.env` 文件。[`.env.example`](.env.example) 只是
-安全配置参考。常用设置：
+应用读取进程环境变量，不会自动加载 `.env` 文件。不要提交真实值。
 
 | 变量 | 默认值 | 作用 |
 | --- | --- | --- |
 | `INVESTORLAB_DB` | `data/investor-lab.sqlite3` | SQLite 路径 |
 | `INVESTORLAB_HOST` | `127.0.0.1` | 监听地址 |
 | `INVESTORLAB_PORT` | `8000` | HTTP 端口 |
-| `INVESTORLAB_ALLOW_REGISTRATION` | `0` | 是否允许第一个账户后的注册 |
-| `INVESTORLAB_SECURE_COOKIE` | `0` | HTTPS 时设为 `1` |
-| `INVESTORLAB_PUBLIC_URL` | 空 | 提供给客户端的 HTTPS 地址 |
-| `INVESTORLAB_ACCESS_GATEWAY` | 空 | 配好 Access 策略后可设为 `cloudflare` |
-| `INVESTORLAB_TRUST_PROXY` | `0` | 只在受控网关后设为 `1` |
 | `INVESTORLAB_SEC_CONTACT` | 登录邮箱 | SEC EDGAR 请求联系地址 |
 | `ALPHAVANTAGE_API_KEY` | 空 | 可选日线/业绩数据 key |
 | `ALPACA_API_KEY_ID` | 空 | 可选 Alpaca Market/Paper key |
 | `ALPACA_API_SECRET_KEY` | 空 | 可选 Alpaca Market/Paper secret |
 
-不要提交真实值。macOS 交互设置可把数据源凭证保存在 Keychain；数据库、备份、日志、签名
-材料与构建产物都已加入 Git 忽略规则。
+全部环境变量、HTTPS 网关、采集限制和历史深度见[配置参考](docs/configuration.md)。macOS
+交互设置可把数据源凭证保存在 Keychain。
 
 ## iOS 使用
 
@@ -256,16 +234,24 @@ xcodebuild \
 - 回测和模拟结果不代表未来表现，也可能受到样本、缺失数据、滑点和公司行动影响。
 - 浏览器通知要求页面保持打开；iOS 当前使用本地通知，没有 APNs 后台推送服务。
 
-## 文档与参与
+## 文档
 
+- [英文项目说明](README.md)
+- [更新记录](CHANGELOG.md)
+- [架构说明](docs/architecture.md)
 - [策略方法](docs/strategy-methodology.md)
 - [Paper 验证协议](docs/paper-validation-protocol.md)
 - [安全与威胁模型](docs/security-and-threat-model.md)
 - [发布准备](docs/release-readiness.md)
 - [App Store 隐私与 TestFlight 元数据](docs/app-store-privacy.md)
-- [贡献指南](CONTRIBUTING.md)
-- [安全问题报告](SECURITY.md)
 - [英文免责声明](DISCLAIMER.md) / [中文免责声明](DISCLAIMER.zh-CN.md)
 
-项目使用 [GNU Affero General Public License v3.0 only](LICENSE)。如果通过网络向用户提供修改
-后的版本，请自行确认 AGPL 第 13 节的对应源代码义务。
+## 参与贡献
+
+欢迎贡献。请先阅读[贡献指南](CONTRIBUTING.md)和[行为准则](CODE_OF_CONDUCT.md)；安全问题
+使用 [SECURITY.md](SECURITY.md) 中的非公开流程报告。
+
+## 许可证
+
+项目使用 [GNU Affero General Public License v3.0 only](LICENSE)。通过网络向用户提供修改后
+的版本时，请确认 AGPL 第 13 节的对应源代码义务。

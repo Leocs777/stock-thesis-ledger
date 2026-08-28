@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using this metadata."
+title: "Stock Thesis Ledger"
+type: software
+authors:
+  - name: "Leocs777"
+version: 0.2.1
+date-released: 2026-08-27
+repository-code: "https://github.com/Leocs777/stock-thesis-ledger"
+url: "https://leocs777.github.io/stock-thesis-ledger/"
+license: AGPL-3.0-only
+abstract: >-
+  A local-first, explainable stock research and Paper-only review workspace for
+  Web and iOS.
+keywords:
+  - investment research
+  - local-first
+  - paper trading

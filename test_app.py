@@ -991,7 +991,7 @@ class InvestorLabAPITest(unittest.TestCase):
             self.assertEqual(fundamentals["annual_history"][-1]["filed"], "2025-02-01")
             self.assertEqual(len(fundamentals["annual_history"]), 2)
             self.assertIn("aapl-20241231.htm", fundamentals["filings"][0]["url"])
-            self.assertEqual(fundamentals["data_version"], 4)
+            self.assertEqual(fundamentals["data_version"], 5)
             self.assertIn("quarterly_history", fundamentals)
             self.assertEqual(len(fundamentals["quarterly_history"]), 4)
             self.assertIn("valuation", fundamentals)
@@ -1000,7 +1000,7 @@ class InvestorLabAPITest(unittest.TestCase):
             self.assertEqual(fundamentals["filing_comparison"]["available"], False)
             self.assertEqual(fundamentals["filings"][0]["kind"], "annual_results")
             self.assertFalse(fundamentals["changes"]["detected"])
-            self.assertEqual(fundamentals["decision"]["model_version"], "decision-v4.1")
+            self.assertEqual(fundamentals["decision"]["model_version"], "decision-v4.1.1")
             self.assertEqual(provider.call_count, 3)
             declared_request = provider.call_args_list[0].args[0]
             self.assertIn(VALID_ACCOUNT["email"], declared_request.get_header("User-agent"))
@@ -1052,6 +1052,45 @@ class InvestorLabAPITest(unittest.TestCase):
         status, cached = self.request("GET", "/api/fundamentals/AAPL")
         self.assertEqual(status, 200)
         self.assertTrue(cached["available"])
+
+    def test_sec_restatement_vintages_remain_available_point_in_time(self):
+        company_facts = {
+            "entityName": "Example Corp",
+            "facts": {
+                "us-gaap": {
+                    "Revenues": {
+                        "units": {
+                            "USD": [
+                                {
+                                    "start": "2022-01-01", "end": "2022-12-31",
+                                    "filed": "2023-02-15", "form": "10-K",
+                                    "fy": 2022, "val": 100,
+                                },
+                                {
+                                    "start": "2022-01-01", "end": "2022-12-31",
+                                    "filed": "2024-03-01", "form": "10-K/A",
+                                    "fy": 2022, "val": 90,
+                                },
+                            ]
+                        }
+                    }
+                }
+            },
+        }
+        result = app._build_fundamentals(
+            "TEST", "0000000001", "Example Corp", company_facts,
+            {"filings": {"recent": {}}},
+        )
+        vintages = result["annual_history_vintages"]
+        before, before_period = app._fundamental_metrics_as_of(vintages, "2023-12-31")
+        after, after_period = app._fundamental_metrics_as_of(vintages, "2024-03-02")
+        self.assertEqual(result["data_version"], 5)
+        self.assertEqual(len(result["annual_history"]), 1)
+        self.assertEqual(len(vintages), 2)
+        self.assertEqual(before["revenue"], 100)
+        self.assertEqual(before_period["filed"], "2023-02-15")
+        self.assertEqual(after["revenue"], 90)
+        self.assertEqual(after_period["filed"], "2024-03-01")
 
     def test_company_search_and_watchlist_earnings_calendar(self):
         self.register()
@@ -1200,7 +1239,7 @@ class InvestorLabAPITest(unittest.TestCase):
         self.assertEqual(first["signal"], "buy_candidate")
         self.assertGreaterEqual(first["score"], 75)
         self.assertEqual(first["quality"], "partial")
-        self.assertEqual(first["model_version"], "decision-v4.1")
+        self.assertEqual(first["model_version"], "decision-v4.1.1")
         self.assertTrue(first["strategy"]["missing_fundamentals_redistributed"])
         self.assertIn("transparent multi-factor rules", first["strategy"]["origin"])
         self.assertEqual(len(first["strategy"]["decision_rules"]), 4)
@@ -1230,7 +1269,8 @@ class InvestorLabAPITest(unittest.TestCase):
         self.assertEqual(holdout["sessions"], 15)
         self.assertEqual(holdout["sample_start"], (start + timedelta(days=84)).isoformat())
         self.assertEqual(holdout["sample_end"], (start + timedelta(days=99)).isoformat())
-        self.assertIn("not frozen", holdout["reason"])
+        self.assertEqual(holdout["remaining_sessions"], 151)
+        self.assertIn("Collect 151 more", holdout["reason"])
         self.assertFalse(first["change"]["signal_changed"])
 
         frozen_at = (start - timedelta(days=1)).isoformat() + "T00:00:00Z"
@@ -1251,7 +1291,7 @@ class InvestorLabAPITest(unittest.TestCase):
             item for item in default_comparison["comparisons"]
             if item["version_id"] == "profile-default"
         )
-        self.assertTrue(default_row["out_of_sample_available"])
+        self.assertFalse(default_row["out_of_sample_available"])
         self.assertEqual(default_row["out_of_sample_sessions"], 15)
 
         _, copilot = self.request(
@@ -1414,6 +1454,35 @@ class InvestorLabAPITest(unittest.TestCase):
             {item["key"]: item["max_score"] for item in balanced["factors"]},
             {item["key"]: item["max_score"] for item in value_run["factors"]},
         )
+
+    def test_backtest_executes_next_close_and_counts_both_cost_sides(self):
+        start = date(2026, 1, 1)
+        rows = []
+        for index in range(70):
+            close = 100_000_000 if index <= 50 else 200_000_000
+            if index == 69:
+                close = 200_300_000
+            rows.append({
+                "trading_date": (start + timedelta(days=index)).isoformat(),
+                "open_micros": close,
+                "high_micros": close,
+                "low_micros": close,
+                "close_micros": close,
+                "volume": 100_000_000,
+            })
+        with patch.object(app, "_decision_factor_set", return_value={"ready": True}), patch.object(
+            app, "_strategy_scorecard", return_value={"score": 100}
+        ):
+            result = app._walk_forward_backtest(rows, cost_bps=10, include_sensitivity=False)
+        trade = result["trades"][0]
+        self.assertEqual(result["execution_timing"], "next_session_close")
+        self.assertEqual(trade["entry_date"], rows[51]["trading_date"])
+        self.assertEqual(trade["entry_price"], "200")
+        self.assertEqual(result["strategy_return_percent"], "-0.05")
+        self.assertEqual(trade["return_percent"], "-0.05")
+        self.assertEqual(trade["outcome"], "loss")
+        self.assertIsNone(result["win_rate_percent"])
+        self.assertIn("10 completed trades", result["win_rate_note"])
 
     def test_daily_briefing_screener_and_paper_performance(self):
         self.register()
@@ -1633,14 +1702,14 @@ class InvestorLabAPITest(unittest.TestCase):
         self.assertEqual([item["name"] for item in templates], ["Technical with valuation"])
 
         self.request("POST", "/api/watchlist", {"symbol": "AAPL"})
-        start = date.today() - timedelta(days=99)
+        start = date.today() - timedelta(days=250)
         with open_db(self.db) as db:
             frozen_at = (start - timedelta(days=1)).isoformat() + "T00:00:00Z"
             db.execute(
                 "UPDATE strategy_versions SET created_at = ?, activated_at = ?",
                 (frozen_at, frozen_at),
             )
-            for index in range(100):
+            for index in range(251):
                 trading_date = (start + timedelta(days=index)).isoformat()
                 for symbol, close in (("AAPL", 100 + index), ("SPY", 400 + index // 2)):
                     close_micros = close * 1_000_000
@@ -1684,7 +1753,7 @@ class InvestorLabAPITest(unittest.TestCase):
             if item["version_id"] == template["version_id"]
         )
         self.assertTrue(compared["out_of_sample_available"])
-        self.assertEqual(compared["out_of_sample_sessions"], 15)
+        self.assertEqual(compared["out_of_sample_sessions"], 60)
         self.assertIsNotNone(compared["out_of_sample_return_percent"])
 
         _, late_template = self.request(
@@ -2070,10 +2139,10 @@ class InvestorLabAPITest(unittest.TestCase):
                 )
 
             insert_run("legacy", "AAPL", "decision-v3.0", (date.today() - timedelta(days=40)).isoformat() + "T12:00:00Z", "balanced", "swing")
-            insert_run("old-context", "TSLA", "decision-v4.1", (date.today() - timedelta(days=10)).isoformat() + "T12:00:00Z", "balanced", "swing")
-            insert_run("outside-window", "AMZN", "decision-v4.1", (date.today() - timedelta(days=90)).isoformat() + "T12:00:00Z", "growth", "long_term")
-            insert_run("new-context-1", "MSFT", "decision-v4.1", (date.today() - timedelta(days=5)).isoformat() + "T12:00:00Z", "growth", "long_term")
-            insert_run("new-context-2", "NVDA", "decision-v4.1", (date.today() - timedelta(days=4)).isoformat() + "T12:00:00Z", "growth", "long_term")
+            insert_run("old-context", "TSLA", "decision-v4.1.1", (date.today() - timedelta(days=10)).isoformat() + "T12:00:00Z", "balanced", "swing")
+            insert_run("outside-window", "AMZN", "decision-v4.1.1", (date.today() - timedelta(days=90)).isoformat() + "T12:00:00Z", "growth", "long_term")
+            insert_run("new-context-1", "MSFT", "decision-v4.1.1", (date.today() - timedelta(days=5)).isoformat() + "T12:00:00Z", "growth", "long_term")
+            insert_run("new-context-2", "NVDA", "decision-v4.1.1", (date.today() - timedelta(days=4)).isoformat() + "T12:00:00Z", "growth", "long_term")
 
         status, validation = self.request("GET", "/api/validation/dashboard")
         self.assertEqual(status, 200)
